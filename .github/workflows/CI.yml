@@ -46,13 +46,9 @@ jobs:
           version: '1'
       - uses: julia-actions/cache@v2
       - name: Instantiate interop env
-        run: |
-          julia --project=test/interop -e '
-            using Pkg
-            Pkg.develop(PackageSpec(path=pwd()))
-            Pkg.add(PackageSpec(
-                url="https://github.com/s-celles/Nghttp2Wrapper.jl",
-                rev="a3dbdfb548c3d4bfbf4ddfce2a835a990f19dcc2"))
-            Pkg.instantiate()'
+        # HTTP2 + Nghttp2Wrapper are resolved via the [sources] block in
+        # test/interop/Project.toml (Julia ≥ 1.11), so a plain
+        # Pkg.instantiate() is sufficient.
+        run: julia --project=test/interop -e 'using Pkg; Pkg.instantiate()'
       - name: Run interop cross-tests
         run: julia --project=test/interop test/interop/runtests.jl

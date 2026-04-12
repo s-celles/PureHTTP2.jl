@@ -5,6 +5,15 @@ Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 
+# [sources] pins Nghttp2Wrapper to a specific git rev since the package
+# is not registered on the Julia General registry. Requires Julia ≥ 1.11
+# (this env's compat floor is 1.12). The `HTTP2` entry uses path="../.."
+# so CI can `Pkg.instantiate()` from a fresh checkout without a separate
+# `Pkg.develop(path=pwd())` step.
+[sources]
+HTTP2 = {path = "../.."}
+Nghttp2Wrapper = {url = "https://github.com/s-celles/Nghttp2Wrapper.jl", rev = "a3dbdfb548c3d4bfbf4ddfce2a835a990f19dcc2"}
+
 [compat]
 TestItemRunner = "1"
 julia = "1.12"
