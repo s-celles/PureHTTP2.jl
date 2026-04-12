@@ -5,6 +5,48 @@ include("hpack.jl")
 include("stream.jl")
 include("flow_control.jl")
 include("connection.jl")
+include("serve.jl")
+
+"""
+    set_alpn_h2!(ctx, protocols=["h2"])
+
+Register the HTTP/2 ALPN protocol identifier on a TLS context.
+
+This is a generic function whose methods are provided by the
+`HTTP2OpenSSLExt` package extension. The extension loads automatically
+via `Base.get_extension` when [`OpenSSL.jl`](https://github.com/JuliaWeb/OpenSSL.jl)
+is present in the same environment as HTTP2.jl.
+
+**Without OpenSSL.jl loaded**, this function has zero methods and
+calling it throws `MethodError` — by design. HTTP2.jl's runtime
+dependency graph stays empty (constitution Principle I); OpenSSL
+is a *weak* dependency activated only when you `using OpenSSL`.
+
+**With OpenSSL.jl loaded**, a method for `OpenSSL.SSLContext`
+becomes available:
+
+```julia
+using HTTP2, OpenSSL
+ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
+HTTP2.set_alpn_h2!(ctx)              # register "h2"
+HTTP2.set_alpn_h2!(ctx, ["h2", "http/1.1"])  # register with fallback
+```
+
+The method converts the user-facing `Vector{String}` into the
+RFC 7301 §3.1 wire format (length-prefixed concatenation) before
+handing off to OpenSSL.
+
+# Current limitations
+
+At Milestone 5, HTTP2.jl is **server-role only** and OpenSSL.jl does
+not yet export `SSL_CTX_set_alpn_select_cb` (the server-side selection
+callback). `set_alpn_h2!` is therefore scaffolded for forward
+compatibility with Milestone 6's client-role work and is not yet
+live-tested end-to-end against a real TLS peer. See
+`docs/src/tls.md` for the full story and `upstream-bugs.md` for
+the upstream tracking entry.
+"""
+function set_alpn_h2! end
 
 # Public API (Milestone 2): frames layer
 export FrameType, FrameFlags, ErrorCode, SettingsParameter
@@ -59,5 +101,8 @@ export process_window_update_frame!, process_headers_frame!, process_continuatio
 export process_data_frame!, process_rst_stream_frame!
 export send_headers, send_data, send_trailers, send_rst_stream, send_goaway
 export is_open
+
+# Public API (Milestone 5): transport layer
+export serve_connection!, set_alpn_h2!
 
 end # module HTTP2

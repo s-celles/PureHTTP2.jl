@@ -391,3 +391,143 @@ end
         @test frame.payload == expected_bytes
     end
 end
+
+@testitem "Interop: h2c live TCP handshake" begin
+    using HTTP2, Nghttp2Wrapper, Sockets
+
+    # Milestone 5 — first live cross-test of HTTP2.serve_connection!
+    # over a real Sockets.TCPSocket against a Nghttp2Wrapper client.
+    # Exercises: preface exchange, server SETTINGS, SETTINGS ACK,
+    # PING round-trip, graceful GOAWAY. h2c (cleartext) per RFC 9113 §3.
+    server_listen = listen(IPv4(0x7f000001), 0)  # 127.0.0.1, ephemeral
+    port = getsockname(server_listen)[2]
+
+    server_err = Ref{Any}(nothing)
+    conn = HTTP2.HTTP2Connection()
+
+    server_task = @async try
+        sock = accept(server_listen)
+        try
+            HTTP2.serve_connection!(conn, sock)
+        finally
+            close(sock)
+        end
+    catch err
+        server_err[] = err
+    end
+
+    try
+        # Client side: Nghttp2Wrapper session, speak to the server
+        # via a raw TCP socket.
+        client_sock = nothing
+        for _ in 1:50
+            try
+                client_sock = connect(IPv4(0x7f000001), port)
+                break
+            catch
+                sleep(0.02)
+            end
+        end
+        @test client_sock !== nothing
+        client_sock::TCPSocket
+
+        cb = Callbacks()
+        try
+            rv, session_ptr = nghttp2_session_client_new(cb.ptr)
+            @test rv == 0
+            try
+                # 1. Submit SETTINGS + drain preface to the server.
+                nghttp2_submit_settings(session_ptr)
+                out = Nghttp2Wrapper._session_send_all(session_ptr)
+                @test length(out) >= 24
+                write(client_sock, out)
+
+                # 2. Pump server response (server preface SETTINGS
+                #    + SETTINGS ACK) into the nghttp2 session.
+                sleep(0.2)
+                buf1 = readavailable(client_sock)
+                @test length(buf1) > 0
+                nrecv = nghttp2_session_mem_recv2(session_ptr, buf1)
+                @test nrecv >= 0
+                # Send our SETTINGS ACK (triggered by server SETTINGS).
+                ack_out = Nghttp2Wrapper._session_send_all(session_ptr)
+                if length(ack_out) > 0
+                    write(client_sock, ack_out)
+                end
+
+                # 3. PING round-trip.
+                nghttp2_submit_ping(session_ptr)
+                ping_out = Nghttp2Wrapper._session_send_all(session_ptr)
+                @test length(ping_out) > 0
+                write(client_sock, ping_out)
+                sleep(0.2)
+                buf2 = readavailable(client_sock)
+                @test length(buf2) > 0
+                # Expect server PING ACK somewhere in the response
+                # (may be preceded by SETTINGS ACK if the server
+                # batched its writes).
+                saw_ping_ack = false
+                cursor = Ref(1)
+                while cursor[] <= length(buf2) - HTTP2.FRAME_HEADER_SIZE + 1
+                    f, consumed = HTTP2.decode_frame(@view buf2[cursor[]:end])
+                    if f.header.frame_type == HTTP2.FrameType.PING &&
+                       HTTP2.has_flag(f.header, HTTP2.FrameFlags.ACK)
+                        saw_ping_ack = true
+                    end
+                    cursor[] += consumed
+                end
+                @test saw_ping_ack
+
+                # 4. Graceful GOAWAY from client.
+                nghttp2_submit_goaway(session_ptr, 0, 0)  # last_stream_id=0, NO_ERROR
+                goaway_out = Nghttp2Wrapper._session_send_all(session_ptr)
+                if length(goaway_out) > 0
+                    write(client_sock, goaway_out)
+                end
+            finally
+                nghttp2_session_del(session_ptr)
+            end
+        finally
+            close(cb)
+        end
+
+        # Closing the client socket causes the server's read loop
+        # to see EOF and return.
+        close(client_sock)
+        wait(server_task)
+    finally
+        close(server_listen)
+    end
+
+    @test server_err[] === nothing
+    @test conn.state in
+          (HTTP2.ConnectionState.CLOSING, HTTP2.ConnectionState.CLOSED)
+    @test conn.goaway_received == true
+end
+
+@testitem "Interop: ALPN helper with OpenSSL extension" begin
+    using HTTP2, OpenSSL
+
+    # Milestone 5 — verify the HTTP2OpenSSLExt package extension
+    # loads automatically when OpenSSL.jl is in the environment, and
+    # that HTTP2.set_alpn_h2! gains a method for OpenSSL.SSLContext.
+    #
+    # Server-side h2 TLS is out of scope at M5 (OpenSSL.jl does not
+    # yet bind SSL_CTX_set_alpn_select_cb — see upstream-bugs.md).
+    # This item guards the forward-compatible client-side helper.
+    @test hasmethod(HTTP2.set_alpn_h2!, (OpenSSL.SSLContext,))
+    @test hasmethod(HTTP2.set_alpn_h2!, (OpenSSL.SSLContext, Vector{String}))
+
+    # Construct a client-side SSL context and call the helper.
+    ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
+    returned = HTTP2.set_alpn_h2!(ctx)
+    @test returned === ctx
+
+    # Explicit protocol list also works and returns the same ctx.
+    returned2 = HTTP2.set_alpn_h2!(ctx, ["h2", "http/1.1"])
+    @test returned2 === ctx
+
+    # Validation: protocol names >255 bytes rejected.
+    long_name = repeat("a", 256)
+    @test_throws ArgumentError HTTP2.set_alpn_h2!(ctx, [long_name])
+end

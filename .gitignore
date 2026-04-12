@@ -37,6 +37,10 @@
 !src/
 !src/**
 
+# Package extensions (Julia [weakdeps] + [extensions])
+!ext/
+!ext/**/*.jl
+
 # Documentation
 !docs/
 !docs/**

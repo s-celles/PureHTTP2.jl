@@ -23,6 +23,36 @@ Entries are added in reverse-chronological order (newest first).
 
 ## Entries
 
+### OpenSSL.jl does not bind `SSL_CTX_set_alpn_select_cb`
+
+- **Package**: OpenSSL.jl
+- **Issue**: OpenSSL.jl exports the client-side ALPN setter
+  (`ssl_set_alpn`, wrapping `SSL_CTX_set_alpn_protos`) but does
+  **not** bind the server-side selection callback
+  (`SSL_CTX_set_alpn_select_cb`). Without that binding, a Julia
+  TLS server cannot choose a protocol from the list advertised by
+  a connecting client, which is the whole point of ALPN on the
+  server side.
+- **Upstream link**: <https://github.com/JuliaWeb/OpenSSL.jl> —
+  no specific issue filed yet; follow-up TODO to open one citing
+  RFC 7301 §3.2 and linking this entry.
+- **Impact on HTTP2.jl**: server-side `h2` (HTTP/2 over TLS) is
+  blocked at Milestone 5. HTTP2.jl is server-role only until
+  Milestone 6, and without the selection callback the server
+  cannot negotiate `h2` over TLS. `h2c` (cleartext) is unaffected
+  and is the primary delivered capability at M5.
+- **Workaround**: the M5 `HTTP2OpenSSLExt` package extension
+  ships the **client-side** helper
+  `HTTP2.set_alpn_h2!(::OpenSSL.SSLContext)` (forward-compatible
+  with Milestone 6's client-role work). The limitation is
+  documented on `docs/src/tls.md` under "## Current limitations".
+  No ccall workaround is attempted locally — per constitution
+  Principle I, missing upstream bindings are tracked here, not
+  papered over in HTTP2.jl.
+- **Status**: `open` — revisit once OpenSSL.jl lands the binding
+  or once HTTP2.jl's own roadmap progresses to Milestone 7+ and
+  the TLS gap becomes a shipping blocker.
+
 ### gRPC-specific header helpers live in src/stream.jl
 
 - **Package**: HTTP2.jl (self-reference — layering concern inherited from M0 extraction)

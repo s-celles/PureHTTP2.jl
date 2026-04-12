@@ -7,7 +7,101 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
-### Added
+### Added (Milestone 5)
+
+- **Milestone 5 — TLS & ALPN integration (h2c first, h2 scaffolded)**.
+  HTTP2.jl gains its first IO-driven server entry point and the
+  groundwork for optional TLS/ALPN support via a Julia package
+  extension. **This milestone activates constitution Principle I's
+  TLS/ALPN carve-out** — and activates it via an *optional* package
+  extension (`[weakdeps]` + `[extensions]`), not a hard dependency,
+  so `[deps]` stays empty.
+- New public function `HTTP2.serve_connection!(conn::HTTP2Connection,
+  io::IO; max_frame_size::Int = DEFAULT_MAX_FRAME_SIZE)` in
+  `src/serve.jl`. Drives a server-role HTTP/2 connection over any
+  `Base.IO` transport that satisfies the IO adapter contract
+  (see `specs/006-tls-alpn-support/contracts/README.md`). Handles
+  the client preface, server preface write-back, frame read loop
+  with `max_frame_size` enforcement (RFC 9113 §6.5.2,
+  `FRAME_SIZE_ERROR` on overlong frames), graceful EOF detection,
+  and write-back of response frames. Transports cross-tested at
+  M5: `Base.IOBuffer` (with a split-IO wrapper),
+  `Base.BufferStream`, `Sockets.TCPSocket` (loopback live).
+- New package extension `ext/HTTP2OpenSSLExt.jl` providing the
+  single method
+  `HTTP2.set_alpn_h2!(ctx::OpenSSL.SSLContext,
+  protocols::Vector{String} = ["h2"])`. Registers the ALPN
+  protocol list on an OpenSSL.jl TLS context via `ssl_set_alpn`
+  after converting the user-facing `Vector{String}` into the
+  RFC 7301 §3.1 wire format (length-prefixed concatenation,
+  max 255 bytes per protocol name — `ArgumentError` on violation).
+  The extension loads automatically via `Base.get_extension` when
+  both HTTP2 and OpenSSL are in the environment; without OpenSSL,
+  `HTTP2.set_alpn_h2!` exists as a generic function with zero
+  methods and calling it throws `MethodError` by design.
+- New `[weakdeps]` + `[extensions]` sections in `Project.toml`
+  binding `HTTP2OpenSSLExt = "OpenSSL"`. `[deps]` remains empty
+  (Principle I preserved).
+- New `src/HTTP2.jl` declarations: `include("serve.jl")`, the
+  `function set_alpn_h2! end` stub with a docstring documenting
+  the extension pattern + limitations, and two new exports
+  (`serve_connection!`, `set_alpn_h2!`) in a new "Milestone 5:
+  transport layer" export block.
+- 3 new `Transport:` `@testitem` units in the main env at
+  `test/testitems_transport.jl`: `serve_connection! with IOBuffer`
+  (split-IO wrapper, asserts SETTINGS + SETTINGS ACK + PING ACK
+  appear in server responses), `serve_connection! with Pipe`
+  (paired `BufferStream` instances, blocking-read code path,
+  client-task-driven handshake), `ALPN helper stub (no extension)`
+  (asserts zero methods + `MethodError` when OpenSSL is not
+  loaded — guards Principle I's "no OpenSSL dep when not loaded"
+  guarantee).
+- 2 new `Interop:` `@testitem` units in `test/interop/testitems_interop.jl`:
+  `h2c live TCP handshake` (first live cross-test of
+  `serve_connection!` over a real `Sockets.TCPSocket` against a
+  Nghttp2Wrapper.jl client — preface exchange, server SETTINGS,
+  SETTINGS ACK, PING round-trip, graceful GOAWAY under 10 s per
+  SC-005), `ALPN helper with OpenSSL extension` (verifies the
+  extension loads automatically when OpenSSL.jl is in the env
+  transitively via Nghttp2Wrapper, exercises
+  `set_alpn_h2!(::OpenSSL.SSLContext)` for single-protocol and
+  multi-protocol forms, verifies 255-byte bound enforcement).
+- New `docs/src/tls.md` page covering: h2c vs h2 comparison with
+  RFC 9113 §3 citations, the IO adapter contract (3 required
+  `Base.IO` methods in a table), the canonical h2c server loop
+  over `Sockets`, usage of the optional OpenSSL extension, and a
+  "Current limitations" section naming the server-side ALPN gap
+  and the Milestone 6 client-role deferral. `docs/make.jl` pages
+  array grows from 8 to 9 entries with "TLS & transport"
+  inserted between "Interop parity" and "API Reference".
+- New entry in `upstream-bugs.md` (newest-first ordering) for
+  OpenSSL.jl's missing `SSL_CTX_set_alpn_select_cb` binding, with
+  full Package/Issue/Upstream link/Impact/Workaround/Status
+  fields and an explicit note that **no ccall workaround is
+  attempted locally** (Principle I).
+
+### Changed (Milestone 5)
+
+- Version bump `0.3.0 → 0.4.0` (minor: new public API surface
+  `serve_connection!` + generic `set_alpn_h2!`, no breaking
+  changes to M0–M4 exports).
+- `src/HTTP2.jl` gains the three permitted additions listed
+  above; no changes to `src/frames.jl`, `src/hpack.jl`,
+  `src/stream.jl`, `src/flow_control.jl`, or
+  `src/connection.jl` (FR-014 not triggered at M5).
+
+### Notes (Milestone 5)
+
+- **Server-side h2 TLS is deferred** pending upstream OpenSSL.jl
+  binding — see the new `upstream-bugs.md` entry and the
+  "Current limitations" section of `docs/src/tls.md`. The client-
+  side `set_alpn_h2!` helper is a forward-compatible scaffold
+  awaiting Milestone 6's client-role code for its live cross-test.
+- The `interop` CI job from M4 is unchanged. TestItemRunner's
+  scan automatically picks up the new `Interop:` items in
+  `test/interop/testitems_interop.jl`.
+
+### Added (Milestone 4)
 
 - **Milestone 4 — Reference parity with Nghttp2Wrapper.jl**.
   HTTP2.jl's wire behaviour is now cross-tested against
@@ -218,7 +312,7 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
   in HTTP2.jl's upstream dependencies or tooling, per the `CLAUDE.md`
   working rule. Currently empty of entries.
 
-### Changed
+### Changed (Milestone 4)
 
 - **Milestone 4 — test/runtests.jl filters the interop group**.
   `test/runtests.jl` now passes a `filter` kwarg to
@@ -333,7 +427,7 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
   error corrected at Milestone 1, not a regression against
   upstream. **1021 tests pass, 0 fail, 0 error.**
 
-### Notes on plan deviations
+### Notes on plan deviations (Milestone 4)
 
 - The plan's `test/Project.toml` file was not created. Test
   dependencies are instead declared via `[extras]` + `[targets]` in
