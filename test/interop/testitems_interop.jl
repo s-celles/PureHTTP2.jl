@@ -563,20 +563,18 @@ end
                     (":authority", "127.0.0.1:$port"),
                 ])
 
-            # Status and headers cross the wire; the body does
-            # NOT because Nghttp2Wrapper.HTTP2Server calls
-            # nghttp2_submit_response2 with a C_NULL data provider
-            # (see upstream-bugs.md entry added at M6). The round
-            # trip of preface + SETTINGS + HEADERS request +
-            # HEADERS response + END_STREAM is the Principle III
-            # cross-test — body parity is deferred pending the
-            # upstream fix.
+            # Status, headers, AND body now all cross the wire.
+            # The upstream Nghttp2Wrapper.HTTP2Server fix wired
+            # `nghttp2_submit_response2` to a real data provider
+            # callback that streams `ServerResponse.body` bytes
+            # from a pinned `ResponseBodySource`. See the closed
+            # `upstream-bugs.md` entry and the
+            # "server response body round-trip" regression test in
+            # Nghttp2Wrapper.jl's `test/server_tests.jl`.
             @test result.status == 200
             @test length(result.headers) >= 1
             @test result.headers[1] == (":status", "200")
-            # When the upstream fix lands, flip this to an
-            # equality check with "hello from nghttp2".
-            @test isempty(result.body)
+            @test String(result.body) == "hello from nghttp2"
         finally
             close(tcp)
         end

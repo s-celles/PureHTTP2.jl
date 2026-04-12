@@ -12,7 +12,7 @@ TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 # `Pkg.develop(path=pwd())` step.
 [sources]
 HTTP2 = {path = "../.."}
-Nghttp2Wrapper = {url = "https://github.com/s-celles/Nghttp2Wrapper.jl", rev = "a3dbdfb548c3d4bfbf4ddfce2a835a990f19dcc2"}
+Nghttp2Wrapper = {url = "https://github.com/s-celles/Nghttp2Wrapper.jl", rev = "c2e2a06506faab7bf7eb0dec9fd6c7f34ab6941b"}
 
 [compat]
 TestItemRunner = "1"
