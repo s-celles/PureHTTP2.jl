@@ -112,12 +112,26 @@ module SettingsParameter
 end
 
 # HTTP/2 Constants
+
+"Size of the HTTP/2 frame header in bytes, per RFC 9113 §4.1."
 const FRAME_HEADER_SIZE = 9
+
+"Default value of the HTTP/2 `INITIAL_WINDOW_SIZE` setting (65535 bytes), per RFC 9113 §6.9.2."
 const DEFAULT_INITIAL_WINDOW_SIZE = 65535
+
+"Default value of the HTTP/2 `MAX_FRAME_SIZE` setting (16384 bytes), per RFC 9113 §6.5.2."
 const DEFAULT_MAX_FRAME_SIZE = 16384
+
+"Minimum value a peer may advertise for `MAX_FRAME_SIZE` (16384 bytes), per RFC 9113 §6.5.2."
 const MIN_MAX_FRAME_SIZE = 16384
+
+"Maximum value a peer may advertise for `MAX_FRAME_SIZE` (2^24 − 1 bytes), per RFC 9113 §6.5.2."
 const MAX_MAX_FRAME_SIZE = 16777215  # 2^24 - 1
+
+"Default value of the HPACK `HEADER_TABLE_SIZE` setting (4096 bytes), per RFC 7541 §4.2."
 const DEFAULT_HEADER_TABLE_SIZE = 4096
+
+"HTTP/2 client connection preface bytes sent over cleartext (h2c) and TLS (h2) connections, per RFC 9113 §3.4."
 const CONNECTION_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
 
 """
@@ -232,7 +246,34 @@ end
 """
     Frame(frame_type, flags, stream_id, payload) -> Frame
 
-Convenience constructor for creating a frame.
+Convenience constructor for creating a frame. Builds the [`FrameHeader`](@ref)
+from the supplied fields and attaches the payload.
+
+# Example
+
+```jldoctest
+julia> using HTTP2
+
+julia> frame = ping_frame(UInt8[1, 2, 3, 4, 5, 6, 7, 8]);
+
+julia> bytes = encode_frame(frame);
+
+julia> decoded, consumed = decode_frame(bytes);
+
+julia> decoded.header.frame_type
+0x06
+
+julia> decoded.payload
+8-element Vector{UInt8}:
+ 0x01
+ 0x02
+ 0x03
+ 0x04
+ 0x05
+ 0x06
+ 0x07
+ 0x08
+```
 """
 function Frame(frame_type::Integer, flags::Integer, stream_id::Integer, payload::Vector{UInt8}=UInt8[])
     header = FrameHeader(length(payload), frame_type, flags, stream_id)

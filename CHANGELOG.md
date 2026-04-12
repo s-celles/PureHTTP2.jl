@@ -9,6 +9,60 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
 
 ### Added
 
+- **Milestone 2 — Frames & HPACK migration, conformance, public API.**
+  HTTP2.jl now has a formal public API surface for the frames and HPACK
+  layers. See the `Frames` and `HPACK` pages in the documentation and
+  [`specs/003-migrate-frames-hpack/contracts/README.md`](specs/003-migrate-frames-hpack/contracts/README.md)
+  for the explicit contract.
+- 8 native `@testitem` units for HPACK (`test/testitems_hpack.jl`),
+  replacing the opaque M1 `M0 carryover: hpack` shim. Contributors can
+  run `huffman`, `integer`, `string`, `dynamic table`, `encoder/decoder`,
+  etc. in isolation.
+- 13 native `@testitem` units for HTTP/2 frame types
+  (`test/testitems_frames.jl`): types/flags/error-code enums, constants,
+  connection preface bytes, frame header encode/decode/round-trip, and
+  per-type handling of PING, GOAWAY, SETTINGS, WINDOW_UPDATE,
+  RST_STREAM.
+- 4 `HPACK conformance:` `@testitem` units
+  (`test/testitems_hpack_conformance.jl`) cross-validating HTTP2.jl's
+  HPACK against the
+  [`http2jp/hpack-test-case`](https://github.com/http2jp/hpack-test-case)
+  vector set. Extracted under `test/fixtures/hpack-test-case/` (4
+  producers × 32 stories = 128 story files). The conformance run
+  exercises 13,536 decoder cases across three producers (nghttp2,
+  go-hpack, python-hpack) and 3,384 encoder-self-test cases on the
+  raw-data producer — **23,688 conformance tests total**, all passing.
+- `@testmodule HPACKFixtures` shared test utility providing a hex
+  decoder, JSON loader, and producer iteration helpers for the
+  hpack-test-case vectors (lives in `test/testitems_hpack_conformance.jl`
+  alongside the items that consume it via `setup=[HPACKFixtures]`).
+- `docs/src/frames.md` page covering the frame layer public API:
+  wire format constants, namespace submodules (FrameType, FrameFlags,
+  ErrorCode, SettingsParameter), `FrameHeader`, generic `Frame`, and
+  the 11 per-type constructors and parsers.
+- `docs/src/hpack.md` page covering the HPACK layer public API:
+  `HPACKEncoder`, `HPACKDecoder`, `encode_headers`, `decode_headers`,
+  `DynamicTable`, and 7 low-level primitives (Huffman + integer +
+  string encode/decode).
+- HPACK round-trip `jldoctest` in `src/hpack.jl` attached to
+  `HPACKEncoder`'s docstring — constructs an encoder and decoder,
+  round-trips a 3-header list, and is executed by Documenter at build
+  time. (Constitution Principle V: first milestone with an executable
+  doctest.)
+- `Frame` round-trip `jldoctest` in `src/frames.jl` attached to the
+  `Frame` convenience constructor's docstring — builds a PING frame,
+  encodes, decodes, and checks the payload bytes round-trip.
+- `export` block in `src/HTTP2.jl` exposing ~40 frame + HPACK symbols
+  as the first formal public API surface. See the
+  [003-migrate-frames-hpack contract](specs/003-migrate-frames-hpack/contracts/README.md)
+  for the full enumerated list.
+- `JSON` test-only dependency
+  (UUID `682c06a0-de6a-54ab-a142-c8b1cf79cde6`) via `[extras]` +
+  `[targets].test`. Does not enter `[deps]` — HTTP2.jl's runtime
+  dependency set remains empty, preserving Principle I.
+- Package version bump `0.0.1` → `0.1.0` signalling the first
+  declared public API surface. No tagged release yet — M7 is the
+  release milestone per `ROADMAP.md`.
 - Initial import of the HTTP/2 implementation (frames, HPACK, stream state
   machine, connection lifecycle, flow control) from
   [gRPCServer.jl](https://github.com/s-celles/gRPCServer.jl) at commit
@@ -48,6 +102,35 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
 
 ### Changed
 
+- **Milestone 2 restructuring of the test tree.** Deleted
+  `test/test_hpack.jl` (fully migrated to `test/testitems_hpack.jl`).
+  Reduced `test/test_http2_conformance.jl` to only its Stream state
+  machine and Connection preface processing testsets — the frame-related
+  testsets (PING/GOAWAY/SETTINGS/WINDOW_UPDATE/RST_STREAM, frame header
+  encode/decode/round-trip, and the type/flags/error-code enums) are
+  now `Frames:` `@testitem`s in `test/testitems_frames.jl`. The shim
+  for the reduced file in `test/testitems.jl` was retitled
+  `M0 carryover: conformance (stream/preface, pending M3)` to signal
+  its temporary status. The three other M1 shims (`http2_stream`,
+  `stream_state_validation`, `connection_management`) remain in place
+  until their own M3 migration.
+- **Removed the `M0 carryover: hpack` shim** from `test/testitems.jl`
+  now that native coverage replaces it.
+- **M2 docstring additions to `src/frames.jl`** (FR-011 permitted):
+  added one-line docstrings to the 7 public constants
+  `FRAME_HEADER_SIZE`, `DEFAULT_INITIAL_WINDOW_SIZE`,
+  `DEFAULT_MAX_FRAME_SIZE`, `MIN_MAX_FRAME_SIZE`, `MAX_MAX_FRAME_SIZE`,
+  `DEFAULT_HEADER_TABLE_SIZE`, `CONNECTION_PREFACE`. Each cites the
+  relevant RFC section. Required to keep `checkdocs = :exports`
+  warning-free after exporting them.
+- **M2 docstring extensions** on `HPACKEncoder` (added a usage example
+  and `jldoctest` block) and `Frame` (the convenience constructor —
+  added a `jldoctest` block). Function bodies unchanged.
+- **Resolved M0 Provenance appendix deferral** for
+  `test/fixtures/hpack-test-case/`: the fixture set is now extracted
+  into `test/fixtures/hpack-test-case/` and exercised by the four
+  `HPACK conformance:` test items. See below for the updated exclusion
+  entry.
 - Deleted dead `include("../fixtures/conformance_data.jl")` +
   `using .ConformanceData` lines (plus the now-orphaned preceding
   comment) from `test/test_http2_conformance.jl` and
@@ -187,6 +270,9 @@ difference between "forgotten" and "deliberately excluded".
   Huffman/integer/string tests are hand-rolled. Deferred to Milestone 2
   (Frames & HPACK), which will pull in the vector set as part of the
   HPACK conformance push.
+  **→ Resolved at Milestone 2**: extracted into
+  `test/fixtures/hpack-test-case/` and exercised by the four
+  `HPACK conformance:` test items (23,688 conformance tests total).
 - **`src/http2/*.cov`** — Julia code-coverage artifacts (e.g.
   `hpack.jl.1286406.cov`) left over from upstream test runs. Build
   outputs, not source. Excluded by allow-listed copy; will never be

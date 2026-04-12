@@ -11,6 +11,8 @@ makedocs(;
     ),
     pages = [
         "Home" => "index.md",
+        "Frames" => "frames.md",
+        "HPACK" => "hpack.md",
         "API Reference" => "api.md",
     ],
     checkdocs = :exports,

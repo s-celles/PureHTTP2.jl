@@ -737,13 +737,36 @@ function decode_string(bytes::AbstractVector{UInt8}, offset::Int)::Tuple{String,
 end
 
 """
-    HPACKEncoder
+    HPACKEncoder(max_table_size::Int = 4096; use_huffman::Bool = false)
 
-HPACK encoder for compressing HTTP/2 headers.
+HPACK encoder for compressing HTTP/2 headers (RFC 7541). Maintains a
+dynamic header table up to `max_table_size` bytes in size. When
+`use_huffman=true`, string literals are Huffman-encoded when doing so
+saves bytes.
 
 # Fields
 - `dynamic_table::DynamicTable`: Dynamic table for compression
 - `use_huffman::Bool`: Whether to use Huffman encoding
+
+# Example
+
+```jldoctest
+julia> using HTTP2
+
+julia> encoder = HPACKEncoder();
+
+julia> decoder = HPACKDecoder();
+
+julia> headers = [(":method", "GET"), (":path", "/"), (":scheme", "https")];
+
+julia> bytes = encode_headers(encoder, headers);
+
+julia> decode_headers(decoder, bytes)
+3-element Vector{Tuple{String, String}}:
+ (":method", "GET")
+ (":path", "/")
+ (":scheme", "https")
+```
 """
 mutable struct HPACKEncoder
     dynamic_table::DynamicTable

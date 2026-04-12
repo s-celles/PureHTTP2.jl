@@ -1,38 +1,26 @@
 # API Reference
 
-This page lists the types and functions HTTP2.jl documents at Milestone 1.
-The surface is intentionally narrow — public-API curation is the
-responsibility of Milestones 2 and 3 (Frames/HPACK, Stream/Connection).
-Undocumented internals are not broken; they are simply not yet part of
-the committed interface.
+The HPACK and frame public API — which is also the full list of
+symbols exported from `HTTP2` — is documented on dedicated pages:
 
-## HPACK
+- **[Frames](@ref)** — wire format, frame header, per-type
+  constructors and parsers, namespace submodules for frame types,
+  flags, settings parameters, and error codes.
+- **[HPACK](@ref)** — encoder/decoder, dynamic table, low-level
+  primitives.
 
-```@docs
-HTTP2.DynamicTable
-HTTP2.HPACKEncoder
-HTTP2.HPACKDecoder
-```
+This page exists to hold doc references for the stream, connection,
+and flow-control layers that are documented in the tree but not yet
+exported. They become fully public in Milestone 3.
 
-## Flow control
+## Flow control (not yet exported — M3)
 
 ```@docs
 HTTP2.FlowControlWindow
 HTTP2.FlowController
 ```
 
-## Frames
-
-```@docs
-HTTP2.FrameHeader
-HTTP2.Frame
-HTTP2.FrameType
-HTTP2.FrameFlags
-HTTP2.ErrorCode
-HTTP2.SettingsParameter
-```
-
-## Stream
+## Stream (not yet exported — M3)
 
 ```@docs
 HTTP2.HTTP2Stream
@@ -40,7 +28,7 @@ HTTP2.StreamState
 HTTP2.StreamError
 ```
 
-## Connection
+## Connection (not yet exported — M3)
 
 ```@docs
 HTTP2.HTTP2Connection
