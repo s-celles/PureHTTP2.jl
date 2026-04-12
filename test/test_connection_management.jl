@@ -4,10 +4,6 @@
 using Test
 using HTTP2
 
-# Include conformance test data
-include("../fixtures/conformance_data.jl")
-using .ConformanceData
-
 @testset "AC6: Connection Management" begin
 
     # =========================================================================
