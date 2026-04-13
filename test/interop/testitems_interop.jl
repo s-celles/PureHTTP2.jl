@@ -583,16 +583,28 @@ end
     end
 end
 
-@testitem "Interop: set_alpn_h2! live TLS handshake" begin
-    using HTTP2, Nghttp2Wrapper, OpenSSL, Sockets
+@testitem "Interop: set_alpn_h2! live TLS handshake (Reseau server)" begin
+    using HTTP2, Reseau, OpenSSL, Sockets
 
-    # Milestone 6 — promote M5's set_alpn_h2! scaffold to live-
-    # tested by actually performing a TLS handshake against a
-    # real peer and observing that "h2" was selected by ALPN.
+    # Milestone 7.5 — repoint the M6 item at a Reseau server and
+    # flip @test_broken to a real @test. The client side still
+    # uses HTTP2.set_alpn_h2! on an OpenSSL.SSLContext; what
+    # changed is the server: previously Nghttp2Wrapper.HTTP2Server
+    # (which uses OpenSSL.ssl_set_alpn for ALPN — a client-side
+    # API that is a no-op on a server context, leaving ALPN
+    # selection unperformed), now a Reseau TLS listener (which
+    # calls SSL_CTX_set_alpn_select_cb at
+    # `Reseau/src/5_tls.jl:725-732` — the exact upstream binding
+    # missing from OpenSSL.jl).
     #
-    # Uses a self-signed cert fixture at test/fixtures/selfsigned.*
-    # and disables client cert verification for the in-test
-    # handshake.
+    # This test proves that HTTP2.set_alpn_h2! successfully
+    # installed the RFC 7301 §3.1 wire format on a client
+    # SSLContext, performed a real TLS handshake to a live
+    # server that actually runs ALPN selection, and the
+    # negotiated protocol comes back as "h2". The entire
+    # client-side OpenSSL flow is unchanged from M6 —
+    # the server-side swap from Nghttp2Wrapper to Reseau is
+    # what makes the `selected == "h2"` assertion pass.
     cert_path = joinpath(@__DIR__, "..", "fixtures", "selfsigned.crt")
     key_path = joinpath(@__DIR__, "..", "fixtures", "selfsigned.key")
 
@@ -602,20 +614,30 @@ end
         return
     end
 
-    server = Nghttp2Wrapper.HTTP2Server(0;
-        host = "127.0.0.1",
-        certfile = cert_path,
-        keyfile = key_path) do _req
-        Nghttp2Wrapper.ServerResponse(200, "hello h2 tls")
+    # Server side: Reseau TLS listener with alpn_protocols=["h2"].
+    # Reseau actually performs server-side ALPN selection (the
+    # binding OpenSSL.jl is missing), so the handshake will
+    # return "h2" to the client.
+    server_cfg = HTTP2.reseau_h2_server_config(;
+        cert_file   = cert_path,
+        key_file    = key_path,
+        verify_peer = false,
+    )
+    listener = Reseau.TLS.listen("tcp", "127.0.0.1:0", server_cfg)
+    laddr = Reseau.TLS.addr(listener)
+    port = Int(laddr.port)
+    @test port > 0
+
+    server_task = Threads.@spawn begin
+        srv_conn = Reseau.TLS.accept(listener)
+        Reseau.TLS.handshake!(srv_conn)
+        return srv_conn
     end
 
     try
-        port = getsockname(server.listener)[2]
-        @test port > 0
-        sleep(0.05)
-
         # Client-side: configure ALPN to advertise h2 via
-        # HTTP2OpenSSLExt, then connect over TLS.
+        # HTTP2OpenSSLExt, then connect over TLS — unchanged
+        # from M6.
         ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
         returned = HTTP2.set_alpn_h2!(ctx)
         @test returned === ctx
@@ -623,33 +645,17 @@ end
         tcp = connect(IPv4(0x7f000001), port)
         try
             tls = OpenSSL.SSLStream(ctx, tcp)
-            # The in-test server cert is self-signed; disable
-            # verification at connect time so the handshake can
-            # complete without a CA bundle.
+            # Self-signed fixture cert; disable client verification.
             OpenSSL.connect(tls; require_ssl_verification=false)
 
-            # After the handshake, ALPN negotiation state lives on
-            # the SSL object. OpenSSL.jl does not yet export an
-            # accessor for the selected ALPN protocol, so we use a
-            # direct ccall to SSL_get0_alpn_selected.
-            #
-            # What this test proves: HTTP2.set_alpn_h2! via the
-            # HTTP2OpenSSLExt extension successfully installed the
-            # RFC 7301 §3.1 wire format on a client SSLContext,
-            # and that context then completed a real TLS handshake
-            # against a live peer. The client-side of the ALPN
-            # protocol reached OpenSSL and was accepted.
-            #
-            # What this test does NOT prove (yet): that the server
-            # selected "h2" from our advertised list. Nghttp2Wrapper's
-            # HTTP2Server uses OpenSSL.ssl_set_alpn on a server
-            # context, which wraps SSL_CTX_set_alpn_protos — that
-            # is the CLIENT-side API and a no-op on a server
-            # context. The server-side selection requires
-            # SSL_CTX_set_alpn_select_cb, which OpenSSL.jl does not
-            # yet bind. See upstream-bugs.md for the full chain.
-            # The @test_broken below will flip to @test once the
-            # upstream gap is closed.
+            # Wait for the Reseau server task to finish its
+            # handshake so we can safely clean up its connection.
+            srv_conn = fetch(server_task)
+
+            # Read the negotiated ALPN protocol via direct ccall
+            # to SSL_get0_alpn_selected (unchanged from M6 — the
+            # client side's path is identical; only the server
+            # changed).
             proto_ptr = Ref{Ptr{UInt8}}(C_NULL)
             proto_len = Ref{Cuint}(0)
             ccall((:SSL_get0_alpn_selected, OpenSSL.libssl), Cvoid,
@@ -662,16 +668,179 @@ end
                 ""
             end
 
-            @test_broken selected == "h2"
+            # The flip: @test_broken → @test. Reseau's server-side
+            # ALPN select callback binding makes this pass.
+            @test selected == "h2"
 
-            try
-                close(tls)
-            catch
-            end
+            # Also verify the server side observed h2.
+            @test Reseau.TLS.connection_state(srv_conn).alpn_protocol == "h2"
+
+            try; close(srv_conn); catch; end
+            try; close(tls); catch; end
         finally
             close(tcp)
         end
     finally
-        close(server)
+        try; close(listener); catch; end
     end
+end
+
+@testitem "Interop: h2 live TLS handshake (server-role via Reseau)" begin
+    using HTTP2, Reseau
+
+    # Milestone 7.5 — first live cross-test of HTTP2.jl's server
+    # role over a real TLS handshake. Reseau.jl binds
+    # SSL_CTX_set_alpn_select_cb, which is the upstream gap in
+    # OpenSSL.jl that previously blocked server-side h2. This
+    # item stands up a Reseau TLS listener with alpn_protocols=["h2"],
+    # accepts a loopback connection from a Reseau client, performs
+    # the handshake, and asserts both sides observe the negotiated
+    # ALPN protocol as "h2".
+    cert_path = joinpath(@__DIR__, "..", "fixtures", "selfsigned.crt")
+    key_path  = joinpath(@__DIR__, "..", "fixtures", "selfsigned.key")
+
+    if !isfile(cert_path) || !isfile(key_path)
+        @warn "TLS fixture cert missing — skipping Reseau server item"
+        @test_broken false
+        return
+    end
+
+    # Server side: use HTTP2.reseau_h2_server_config to build a
+    # Config with ALPN h2 pre-populated. Disable peer verification
+    # (we're using a self-signed fixture cert). Both sides share
+    # the fixture; Reseau accepts client certs optionally.
+    server_cfg = HTTP2.reseau_h2_server_config(;
+        cert_file   = cert_path,
+        key_file    = key_path,
+        verify_peer = false,
+    )
+    @test server_cfg.alpn_protocols == ["h2"]
+
+    listener = Reseau.TLS.listen("tcp", "127.0.0.1:0", server_cfg)
+    laddr = Reseau.TLS.addr(listener)
+    @test laddr.port > 0
+
+    # Spawn server-accept task. The task returns the TLS.Conn after
+    # handshake completes; it does NOT call HTTP2.serve_connection!
+    # — the test's scope is to prove that HTTP2.jl's server-role
+    # IO entry point can accept a TLS.Conn whose ALPN is "h2". Full
+    # HTTP/2 exchange is covered by M6's h2c items.
+    server_task = Threads.@spawn begin
+        srv_conn = Reseau.TLS.accept(listener)
+        Reseau.TLS.handshake!(srv_conn)
+        return srv_conn
+    end
+
+    # Client side: call Reseau.TLS.connect directly with
+    # alpn_protocols as a kwarg. The reseau_h2_client_config
+    # helper builds a Config object, but Reseau.TLS.connect's
+    # multi-arg form does not accept a Config — it takes TLS
+    # kwargs inline and builds a Config internally. We exercise
+    # the HTTP2.jl helper's default-list behavior via a separate
+    # assertion below; for the actual connect, we pass
+    # alpn_protocols=HTTP2.ALPN_H2_PROTOCOLS directly.
+    sample_cfg = HTTP2.reseau_h2_client_config()
+    @test sample_cfg.alpn_protocols == ["h2"]
+
+    client_conn = Reseau.TLS.connect("tcp", "127.0.0.1:$(laddr.port)";
+        alpn_protocols = HTTP2.ALPN_H2_PROTOCOLS,
+        verify_peer = false,
+        server_name = "localhost",
+    )
+
+    try
+        # Wait for server-side handshake to complete
+        server_conn = fetch(server_task)
+
+        try
+            # Both sides must observe h2 as the negotiated ALPN
+            # protocol. This is the first HTTP2.jl test that
+            # flips from @test_broken to @test for server-side
+            # ALPN selection — Reseau's binding of
+            # SSL_CTX_set_alpn_select_cb makes this work.
+            client_alpn = Reseau.TLS.connection_state(client_conn).alpn_protocol
+            server_alpn = Reseau.TLS.connection_state(server_conn).alpn_protocol
+
+            @test client_alpn == "h2"
+            @test server_alpn == "h2"
+
+            # Sanity check: HTTP2.jl's serve_connection! would
+            # accept the TLS.Conn as a valid Base.IO transport.
+            # We don't drive a full HTTP/2 exchange here (the
+            # tests from US1 in `Interop: h2c live TCP client`
+            # already exercise that path over TCP). Instead, we
+            # verify the IO adapter contract methods are
+            # defined on TLS.Conn.
+            @test applicable(read, server_conn, 1)
+            @test applicable(write, server_conn, UInt8[])
+            @test applicable(close, server_conn)
+        finally
+            try
+                close(server_conn)
+            catch
+            end
+        end
+    finally
+        try
+            close(client_conn)
+        catch
+        end
+        try
+            close(listener)
+        catch
+        end
+    end
+end
+
+@testitem "Interop: ALPN helper with Reseau extension" begin
+    using HTTP2, Reseau
+
+    # Milestone 7.5 — guard the HTTP2ReseauExt package extension
+    # auto-load flow. Mirrors the M5
+    # `Interop: ALPN helper with OpenSSL extension` item but for
+    # the new Reseau-backed helpers. Verifies: (a) the three
+    # constructor stubs have exactly one method each when Reseau
+    # is loaded, (b) `Base.get_extension` finds the loaded
+    # extension, (c) the default `alpn_protocols == ["h2"]`
+    # behavior works, (d) explicit overrides are honored,
+    # (e) the server config helper enforces its required
+    # cert_file / key_file kwargs.
+    @test length(methods(HTTP2.reseau_h2_server_config)) == 1
+    @test length(methods(HTTP2.reseau_h2_client_config)) == 1
+    @test length(methods(HTTP2.reseau_h2_connect)) == 1
+
+    ext = Base.get_extension(HTTP2, :HTTP2ReseauExt)
+    @test ext !== nothing
+
+    # Default ALPN list: should be ["h2"] on both config helpers.
+    client_cfg = HTTP2.reseau_h2_client_config()
+    @test client_cfg.alpn_protocols == ["h2"]
+    @test client_cfg.alpn_protocols == HTTP2.ALPN_H2_PROTOCOLS
+
+    # Explicit override is honored.
+    client_cfg_override = HTTP2.reseau_h2_client_config(;
+        alpn_protocols = ["h2", "http/1.1"])
+    @test client_cfg_override.alpn_protocols == ["h2", "http/1.1"]
+
+    # Server config helper requires cert_file and key_file.
+    @test_throws UndefKeywordError HTTP2.reseau_h2_server_config()
+
+    # When server config helper is called with both cert_file
+    # and key_file, it returns a Config with default ALPN.
+    # Use the M6 fixture paths.
+    cert_path = joinpath(@__DIR__, "..", "fixtures", "selfsigned.crt")
+    key_path  = joinpath(@__DIR__, "..", "fixtures", "selfsigned.key")
+    if isfile(cert_path) && isfile(key_path)
+        server_cfg = HTTP2.reseau_h2_server_config(;
+            cert_file = cert_path,
+            key_file  = key_path,
+        )
+        @test server_cfg.alpn_protocols == ["h2"]
+        @test server_cfg.cert_file == cert_path
+        @test server_cfg.key_file == key_path
+    end
+
+    # The ALPN_H2_PROTOCOLS constant is exported from HTTP2.
+    @test :ALPN_H2_PROTOCOLS in names(HTTP2)
+    @test HTTP2.ALPN_H2_PROTOCOLS == ["h2"]
 end

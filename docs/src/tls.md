@@ -82,19 +82,36 @@ reference implementation via Nghttp2Wrapper.jl — see the
 [`Interop: h2c live TCP handshake`](nghttp2-parity.md) test item in
 `test/interop/testitems_interop.jl`.
 
-## Optional OpenSSL.jl extension
+## TLS backends
 
-HTTP2.jl does **not** depend on OpenSSL.jl at runtime. Its `[deps]`
-block is empty by design (constitution Principle I). When
-`using OpenSSL` is in scope alongside `using HTTP2`, Julia's
-package-extension mechanism activates `HTTP2OpenSSLExt`, which adds
-one method to the generic [`set_alpn_h2!`](@ref) function:
+HTTP2.jl does **not** depend on any TLS library at runtime. Its
+`[deps]` block is empty by design (constitution Principle I).
+Instead, HTTP2.jl ships two **optional** TLS backends as Julia
+package extensions. You opt into whichever one your environment
+already uses; HTTP2.jl itself is agnostic and accepts any
+`Base.IO` satisfying the IO adapter contract.
+
+| Backend | Extension module | Client ALPN | Server ALPN | Use when |
+| ------- | ---------------- | ----------- | ----------- | -------- |
+| [OpenSSL.jl](https://github.com/JuliaWeb/OpenSSL.jl) | `HTTP2OpenSSLExt` | ✅ via `set_alpn_h2!` | ❌ blocked on upstream binding | You're already depending on OpenSSL.jl or want a mutable `SSLContext` you can configure piecemeal. |
+| [Reseau.jl](https://github.com/JuliaServices/Reseau.jl) | `HTTP2ReseauExt` | ✅ via `reseau_h2_client_config` / `reseau_h2_connect` | ✅ via `reseau_h2_server_config` | You need **server-side h2 over TLS** today, or you already depend on Reseau.jl for other reasons. |
+
+Both extensions coexist — loading both packages activates both
+sets of helpers simultaneously. There are no method collisions:
+the two backends use different generic function names
+(`set_alpn_h2!` for OpenSSL, `reseau_h2_*` for Reseau).
+
+### OpenSSL.jl
+
+When `using OpenSSL` is in scope alongside `using HTTP2`, Julia's
+package-extension mechanism activates `HTTP2OpenSSLExt`, which
+adds one method to the generic [`set_alpn_h2!`](@ref) function:
 
 ```julia
 using HTTP2, OpenSSL
 
 ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
-HTTP2.set_alpn_h2!(ctx)                   # register "h2"
+HTTP2.set_alpn_h2!(ctx)                    # register "h2"
 HTTP2.set_alpn_h2!(ctx, ["h2", "http/1.1"])  # with fallback
 ```
 
@@ -108,29 +125,98 @@ rejected with `ArgumentError` before any ccall.
 HTTP2.set_alpn_h2!
 ```
 
-When OpenSSL.jl is **not** in the environment, `HTTP2.set_alpn_h2!`
-still exists as a generic function with zero methods. Calling it
-throws `MethodError` — by design. HTTP2.jl's runtime dependency
-graph stays empty and the package extension is an opt-in feature
-activated only by environments that bring their own OpenSSL.
+**OpenSSL.jl caveat**: `set_alpn_h2!` is **client-side only** at
+Milestone 7.5 because OpenSSL.jl does not yet bind
+`SSL_CTX_set_alpn_select_cb`, the server-side selection callback
+required to negotiate `h2` in a handshake initiated by a client.
+HTTP2.jl's `upstream-bugs.md` entry for this gap is marked
+`worked-around via Reseau.jl` (see the Reseau backend below) —
+users who specifically want the OpenSSL-only code path still need
+the upstream binding to land.
+
+### Reseau.jl
+
+When `using Reseau` is in scope alongside `using HTTP2`, the
+`HTTP2ReseauExt` extension activates and adds three
+**constructor-style** helpers:
+
+```julia
+using HTTP2, Reseau
+
+# Server side: hand to Reseau.TLS.listen
+server_cfg = HTTP2.reseau_h2_server_config(;
+    cert_file = "server.crt",
+    key_file  = "server.key",
+)
+
+listener = Reseau.TLS.listen("tcp", "0.0.0.0:443", server_cfg)
+conn = Reseau.TLS.accept(listener)
+Reseau.TLS.handshake!(conn)
+# Reseau.TLS.connection_state(conn).alpn_protocol is now "h2"
+HTTP2.serve_connection!(HTTP2.HTTP2Connection(), conn)
+```
+
+```julia
+using HTTP2, Reseau
+
+# Client side: one-shot h2-over-TLS connect
+client = HTTP2.reseau_h2_connect("tcp", "example.com:443";
+    server_name = "example.com")
+
+conn = HTTP2Connection()
+result = HTTP2.open_connection!(conn, client;
+    request_headers = Tuple{String,String}[
+        (":method",    "GET"),
+        (":path",      "/"),
+        (":scheme",    "https"),
+        (":authority", "example.com"),
+    ])
+close(client)
+```
+
+```@docs
+HTTP2.reseau_h2_server_config
+HTTP2.reseau_h2_client_config
+HTTP2.reseau_h2_connect
+HTTP2.ALPN_H2_PROTOCOLS
+```
+
+Reseau.jl binds `SSL_CTX_set_alpn_select_cb` internally (at
+`src/5_tls.jl:725-732` in Reseau v1.0.1), which is the exact
+upstream gap that blocks server-side h2 on OpenSSL.jl. This
+makes Reseau the **recommended backend for server-side h2 TLS**
+until OpenSSL.jl adds its own binding.
+
+**Symmetry-break**: the Reseau helpers are **constructors**, not
+mutators. `Reseau.TLS.Config` is an immutable Julia struct
+(`alpn_protocols` is defensively `copy()`-ed at construction in
+Reseau v1.0.1 `src/5_tls.jl:240`), so an analogous
+`set_alpn_h2!(::Reseau.TLS.Config)` is structurally impossible.
+The `reseau_h2_*` helpers build fresh configs with
+`alpn_protocols = HTTP2.ALPN_H2_PROTOCOLS` pre-populated; callers
+override via an explicit `alpn_protocols=...` kwarg.
+
+### Extension-absent behavior
+
+When **neither** OpenSSL.jl nor Reseau.jl is in the environment,
+all four helpers exist as generic functions with **zero** methods.
+Calling them throws `MethodError` — by design. HTTP2.jl's runtime
+dependency graph stays empty and the extensions are opt-in.
 
 ## Current limitations
 
-**Server-side ALPN for `h2` is not yet supported.** OpenSSL.jl at
-the M5 target version does not export
-`SSL_CTX_set_alpn_select_cb`, the server-side selection callback
-required to negotiate `h2` in a TLS handshake initiated by a client.
-HTTP2.jl has an open upstream entry for this in `upstream-bugs.md`
-at the repository root. Once the binding lands, HTTP2.jl gains a
-matching helper and a live `h2` cross-test.
-
-**Client-role HTTP2.jl code** is deferred to Milestone 6. The
-`set_alpn_h2!` helper shipped at M5 is a forward-compatible
-scaffold — it exercises the extension pattern and the wire-format
-conversion today, and gains a live TLS cross-test once the client
-role lands.
-
 **`h2c` is fully supported.** If your deployment is inside a
-trusted network, behind a TLS-terminating proxy, or a gRPC service
-running over loopback, the `serve_connection!` + TCP pattern above
-is the intended shipping path at M5.
+trusted network, behind a TLS-terminating proxy, or a gRPC
+service running over loopback, the `serve_connection!` +
+`Sockets.TCPSocket` pattern above is the intended shipping path.
+
+**Server-side `h2` over TLS is supported via Reseau.jl** — see
+the "Reseau.jl" subsection above. An analogous server-side helper
+in `HTTP2OpenSSLExt` awaits OpenSSL.jl's
+`SSL_CTX_set_alpn_select_cb` binding landing upstream. The
+upstream tracking entry in `upstream-bugs.md` is marked
+`worked-around via Reseau.jl`.
+
+**Client-role HTTP2.jl code** shipped at Milestone 6. Both
+backends' helpers work with [`open_connection!`](@ref) on the
+client side.

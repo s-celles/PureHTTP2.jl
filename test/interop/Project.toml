@@ -10,6 +10,12 @@ Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 # must be listed explicitly for `using OpenSSL` inside @testitem
 # blocks to resolve.
 OpenSSL = "4d8831e6-92b7-49fb-bdf8-b643e874388c"
+# Reseau provides the server-side ALPN select callback binding
+# missing from OpenSSL.jl; required by M7.5 interop items
+# (`Interop: h2 live TLS handshake (server-role via Reseau)`,
+# `Interop: ALPN helper with Reseau extension`, and the
+# repointed `Interop: set_alpn_h2! live TLS handshake (Reseau server)`).
+Reseau = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 
@@ -23,5 +29,6 @@ HTTP2 = {path = "../.."}
 Nghttp2Wrapper = {url = "https://github.com/s-celles/Nghttp2Wrapper.jl", rev = "c2e2a06506faab7bf7eb0dec9fd6c7f34ab6941b"}
 
 [compat]
+Reseau = "1"
 TestItemRunner = "1"
 julia = "1.12"

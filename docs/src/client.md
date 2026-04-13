@@ -95,6 +95,45 @@ handshake — is the caller's responsibility. HTTP2.jl takes
 any `::IO`, which keeps its runtime dependency graph empty
 (constitution Principle I preserved).
 
+### Over TLS (h2) via `HTTP2ReseauExt`
+
+Milestone 7.5 adds a second TLS backend:
+[Reseau.jl](https://github.com/JuliaServices/Reseau.jl). Reseau
+binds `SSL_CTX_set_alpn_select_cb` (the server-side ALPN
+selection callback that OpenSSL.jl does not yet expose), so if
+you need server-side h2 over TLS, Reseau is the recommended
+backend. Client-side h2 works through Reseau too — the
+`HTTP2ReseauExt` extension ships a one-shot helper:
+
+```julia
+using HTTP2, Reseau
+
+# reseau_h2_connect calls Reseau.TLS.connect(address; ...)
+# with alpn_protocols=["h2"] merged in and returns a
+# fully-handshaken Reseau.TLS.Conn (which satisfies HTTP2.jl's
+# IO adapter contract natively — no wrapper needed).
+client = HTTP2.reseau_h2_connect("tcp", "127.0.0.1:8443";
+    server_name = "127.0.0.1",
+    verify_peer = false)  # self-signed fixture; omit for prod
+
+conn = HTTP2Connection()
+result = HTTP2.open_connection!(conn, client;
+    request_headers = Tuple{String, String}[
+        (":method",    "GET"),
+        (":path",      "/"),
+        (":scheme",    "https"),
+        (":authority", "127.0.0.1:8443"),
+    ])
+
+close(client)
+```
+
+Both the `HTTP2OpenSSLExt` path (above) and the `HTTP2ReseauExt`
+path coexist — neither displaces the other. See
+[TLS & transport](tls.md) for the full comparison of the two
+backends, docstrings for all three `reseau_h2_*` helpers, and
+the constructor-vs-mutator symmetry-break between them.
+
 ## The `open_connection!` contract
 
 ```@docs

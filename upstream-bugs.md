@@ -80,22 +80,52 @@ Entries are added in reverse-chronological order (newest first).
   as a post-release follow-up citing RFC 7301 §3.2 and this
   entry; this field will be updated to the specific issue URL
   in the next patch release.
-- **Impact on HTTP2.jl**: server-side `h2` (HTTP/2 over TLS) is
-  blocked at Milestone 5. HTTP2.jl is server-role only until
-  Milestone 6, and without the selection callback the server
-  cannot negotiate `h2` over TLS. `h2c` (cleartext) is unaffected
-  and is the primary delivered capability at M5.
-- **Workaround**: the M5 `HTTP2OpenSSLExt` package extension
-  ships the **client-side** helper
-  `HTTP2.set_alpn_h2!(::OpenSSL.SSLContext)` (forward-compatible
-  with Milestone 6's client-role work). The limitation is
-  documented on `docs/src/tls.md` under "## Current limitations".
-  No ccall workaround is attempted locally — per constitution
-  Principle I, missing upstream bindings are tracked here, not
-  papered over in HTTP2.jl.
-- **Status**: `open` — revisit once OpenSSL.jl lands the binding
-  or once HTTP2.jl's own roadmap progresses to Milestone 7+ and
-  the TLS gap becomes a shipping blocker.
+- **Impact on HTTP2.jl**: at Milestone 5 this blocked
+  server-side `h2` (HTTP/2 over TLS) entirely — HTTP2.jl's
+  `serve_connection!` could not negotiate `h2` in a TLS
+  handshake because the OpenSSL.jl client-side `ssl_set_alpn`
+  call is a no-op on a server context. `h2c` (cleartext) was
+  unaffected and remained the primary delivered capability at
+  M5–M7. At Milestone 7.5, HTTP2.jl ships a second TLS backend
+  via `ext/HTTP2ReseauExt.jl` that uses
+  [Reseau.jl](https://github.com/JuliaServices/Reseau.jl) for
+  server-side TLS instead — Reseau binds
+  `SSL_CTX_set_alpn_select_cb` directly at
+  `src/5_tls.jl:725-732` in Reseau v1.0.1 via `@cfunction`, so
+  the `h2` selection the OpenSSL.jl path could not perform is
+  fully functional through the Reseau path. HTTP2.jl is no
+  longer **blocked** by this upstream gap, even though the
+  gap itself remains open in OpenSSL.jl.
+- **Workaround**: since Milestone 7.5, the
+  `HTTP2ReseauExt` package extension provides three
+  constructor-style helpers —
+  `HTTP2.reseau_h2_server_config`, `reseau_h2_client_config`,
+  `reseau_h2_connect` — that pre-populate `alpn_protocols =
+  ["h2"]` on Reseau's `TLS.Config` and hand the resulting
+  `TLS.Conn` directly to `HTTP2.serve_connection!` /
+  `HTTP2.open_connection!`. The M5 `HTTP2OpenSSLExt` helper
+  `HTTP2.set_alpn_h2!(::OpenSSL.SSLContext)` stays in place
+  for client-side use and for users who do not want to add
+  Reseau as a second TLS dependency; server-side callers who
+  must use OpenSSL.jl's code path continue to need the
+  upstream binding. See `docs/src/tls.md` under "## TLS
+  backends" → "Reseau.jl" for the worked server-side example,
+  and `specs/009-reseau-tls-backend/contracts/README.md`
+  Section 2 for the symmetry-break rationale
+  (constructor-style helpers vs mutator on an immutable
+  struct). No ccall workaround is attempted in HTTP2.jl
+  itself — constitution Principle I's TLS carve-out is
+  satisfied via Reseau's own, already-pure-Julia `ccall`
+  sites into `OpenSSL_jll`.
+- **Status**: `worked-around via Reseau.jl` — HTTP2.jl no
+  longer blocks on this gap as of Milestone 7.5. The upstream
+  binding is still a valuable addition for users who want the
+  OpenSSL-only code path without Reseau as a second
+  dependency, so the entry stays open from the OpenSSL.jl
+  perspective. When OpenSSL.jl lands the binding, HTTP2.jl
+  can add an analogous `HTTP2.set_alpn_select_h2!` server-
+  side helper to `HTTP2OpenSSLExt` and this entry flips to
+  `fixed-upstream`.
 
 ### gRPC-specific header helpers live in src/stream.jl
 
