@@ -1,6 +1,6 @@
 # API Reference
 
-HTTP2.jl's public API is organised into five layers. Each layer
+PureHTTP2.jl's public API is organised into five layers. Each layer
 has a dedicated documentation page with docstrings and examples
 for every exported symbol.
 
@@ -20,7 +20,7 @@ for every exported symbol.
 
 ## Role coverage
 
-HTTP2.jl's current public API is primarily **server-role**:
+PureHTTP2.jl's current public API is primarily **server-role**:
 
 | Layer | Role |
 |---|---|
@@ -33,4 +33,4 @@ HTTP2.jl's current public API is primarily **server-role**:
 Client-role symmetry — specifically, sending the connection
 preface, processing a server's SETTINGS frame, and exercising the
 outbound APIs from a client context — is scheduled for
-**Milestone 6**. See [ROADMAP.md](https://github.com/s-celles/HTTP2.jl/blob/main/ROADMAP.md).
+**Milestone 6**. See [ROADMAP.md](https://github.com/s-celles/PureHTTP2.jl/blob/main/ROADMAP.md).

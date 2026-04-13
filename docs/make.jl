@@ -1,12 +1,12 @@
 using Documenter
-using HTTP2
+using PureHTTP2
 
 makedocs(;
-    modules = [HTTP2],
-    sitename = "HTTP2.jl",
+    modules = [PureHTTP2],
+    sitename = "PureHTTP2.jl",
     authors = "Sébastien Celles",
     format = Documenter.HTML(;
-        canonical = "https://s-celles.github.io/HTTP2.jl",
+        canonical = "https://s-celles.github.io/PureHTTP2.jl",
         edit_link = "main",
     ),
     pages = [
@@ -27,7 +27,7 @@ makedocs(;
 
 if get(ENV, "GITHUB_ACTIONS", nothing) == "true"
     deploydocs(;
-        repo = "github.com/s-celles/HTTP2.jl",
+        repo = "github.com/s-celles/PureHTTP2.jl",
         devbranch = "main",
         push_preview = true,
     )

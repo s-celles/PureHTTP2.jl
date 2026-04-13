@@ -1,6 +1,6 @@
 # Roadmap
 
-This document outlines the planned milestones for HTTP2.jl, a pure Julia
+This document outlines the planned milestones for PureHTTP2.jl, a pure Julia
 HTTP/2 implementation. The library was extracted from the `http2`
 module of
 [gRPCServer.jl](https://github.com/s-celles/gRPCServer.jl/tree/develop/src/http2)
@@ -26,7 +26,8 @@ builds, and RFC-grounded cross-tests against Nghttp2Wrapper.jl.
 | M6        | `0.4.0 → 0.5.0` | ✅ Completed   | `e9070d5` | 24,809 / 24,937 +1 broken |
 | M7        | `0.5.0 → 0.1.0` + `v0.1.0` tag | ✅ Completed | `c692f2c` | 24,809 / 24,937 +1 broken |
 | M7.5      | `0.1.0 → 0.2.0` + `v0.2.0` tag | ✅ Completed | *TBD on main merge* | 24,809 / 24,947 + 0 broken |
-| M8        | → `v0.3.0`      | Not started    |           |                        |
+| Rename    | `0.2.0 → 0.3.0` + `v0.3.0` tag | ✅ Completed (`HTTP2` → `PureHTTP2`) | *TBD on main merge* | 24,809 / 24,960 + 0 broken |
+| M8        | → `v0.4.0`      | Not started    |           |                        |
 
 **Principle III (Specification Conformance & Reference Parity)** is
 operationally fulfilled for **server role** (M4, deepened at M5),
@@ -36,7 +37,7 @@ Reseau.jl).
 **Deferred upstream** (tracked in `upstream-bugs.md`):
 
 - OpenSSL.jl: `SSL_CTX_set_alpn_select_cb` binding missing —
-  **no longer blocking HTTP2.jl** as of M7.5 (worked around via
+  **no longer blocking PureHTTP2.jl** as of M7.5 (worked around via
   Reseau.jl). Still a valuable upstream addition for users who
   want the OpenSSL-only code path without Reseau as a second
   dependency.
@@ -89,13 +90,13 @@ provenance recorded.
 
 **Status**: Completed (commit `667e4c8`, version `0.0.1`)
 
-Stood up HTTP2.jl as a real Julia package so the extracted code could
+Stood up PureHTTP2.jl as a real Julia package so the extracted code could
 be developed in isolation.
 
 - [x] `Project.toml` with `name = "HTTP2"`, UUID
       `7d1e1b98-28e7-4969-8df9-5a308937986a`, `[compat]` entries, and
       minimum Julia version `1.10`
-- [x] `src/HTTP2.jl` root module `include`ing the five extracted files
+- [x] `src/PureHTTP2.jl` root module `include`ing the five extracted files
       in dependency order
 - [x] `test/runtests.jl` wired to `TestItemRunner.jl`
 - [x] GitHub Actions workflow: `julia=[1.10, 1] × os=[ubuntu-latest]`
@@ -160,7 +161,7 @@ Brought the stateful layers up to the same standard as M2.
 - [x] 4 M0 test shim files deleted
 
 **Exit criteria met**: all migrated gRPCServer.jl tests pass on
-HTTP2.jl standalone (24,767 total); stateful layers documented.
+PureHTTP2.jl standalone (24,767 total); stateful layers documented.
 
 ---
 
@@ -218,7 +219,7 @@ carve-out via an optional package extension.**
 **Scope pivot**: the milestone title mentions "TLS & ALPN" but
 OpenSSL.jl at the target version does not export
 `SSL_CTX_set_alpn_select_cb`, the server-side selection callback.
-Since HTTP2.jl was server-role only before M6, full TLS+ALPN server
+Since PureHTTP2.jl was server-role only before M6, full TLS+ALPN server
 support could not land at M5. M5 therefore pivoted to:
 **(a) h2c over real TCP** as the primary delivered capability, and
 **(b) optional OpenSSL extension** scaffolded for forward compat
@@ -230,11 +231,11 @@ with M6's client-role work.
 - [x] New public function `serve_connection!(::HTTP2Connection, ::IO)`
       in `src/serve.jl` (~130 lines with docstring). Drives the server
       over any `Base.IO` transport satisfying the contract.
-- [x] `[weakdeps] OpenSSL` + `[extensions] HTTP2OpenSSLExt` binding
+- [x] `[weakdeps] OpenSSL` + `[extensions] PureHTTP2OpenSSLExt` binding
       added to `Project.toml`. `[deps]` remains empty.
-- [x] `ext/HTTP2OpenSSLExt.jl` package extension providing the
+- [x] `ext/PureHTTP2OpenSSLExt.jl` package extension providing the
       single method
-      `HTTP2.set_alpn_h2!(::OpenSSL.SSLContext, protocols::Vector{String}=["h2"])`.
+      `PureHTTP2.set_alpn_h2!(::OpenSSL.SSLContext, protocols::Vector{String}=["h2"])`.
       Converts the user-facing list into RFC 7301 §3.1 wire format
       (length-prefixed concatenation, 255-byte name cap) and calls
       `OpenSSL.ssl_set_alpn`.
@@ -242,7 +243,7 @@ with M6's client-role work.
       (split-IO wrapper), `Pipe` (paired `BufferStream`), stub
       (`set_alpn_h2!` has zero methods when OpenSSL is not loaded)
 - [x] 2 new `Interop:` items in the interop env: `h2c live TCP
-      handshake` (HTTP2.jl server vs Nghttp2Wrapper client) + ALPN
+      handshake` (PureHTTP2.jl server vs Nghttp2Wrapper client) + ALPN
       extension loaded
 - [x] `docs/src/tls.md` page with h2c vs h2, IO adapter contract,
       and current limitations
@@ -254,7 +255,7 @@ with M6's client-role work.
 
 **Exit criteria partially met**: h2c end-to-end interops with
 nghttp2 via the live TCP handshake item. Live ALPN-negotiated `h2`
-end-to-end is **deferred to M6** because HTTP2.jl had no client role
+end-to-end is **deferred to M6** because PureHTTP2.jl had no client role
 at M5. Server-side h2 TLS remains **deferred to a future milestone**
 pending the OpenSSL.jl upstream binding.
 
@@ -265,7 +266,7 @@ pending the OpenSSL.jl upstream binding.
 **Status**: Completed (commit `e9070d5`, version `0.4.0 → 0.5.0`)
 
 gRPCServer.jl only exercised the server half of the state machine.
-M6 rounded out the client half so HTTP2.jl is symmetric.
+M6 rounded out the client half so PureHTTP2.jl is symmetric.
 **This milestone operationally fulfilled constitution Principle III
 for the client role** via a live TCP round trip against `libnghttp2`.
 
@@ -282,14 +283,14 @@ for the client role** via a live TCP round trip against `libnghttp2`.
       dispatcher (9 handlers) that **bypasses** the server-role
       `process_*_frame!` helpers in `src/connection.jl` — those
       embed server-side assumptions wrong for a client receiving a
-      response. **Zero existing-src edits**; `src/HTTP2.jl` gains
+      response. **Zero existing-src edits**; `src/PureHTTP2.jl` gains
       only `include("client.jl")` + `export open_connection!`.
 - [x] Client-role `@testitem` units mirror the server tests:
       stream ID parity, BufferStream round-trip, END_STREAM on
       HEADERS, CONTINUATION reassembly, DATA body collection,
       RST_STREAM, GOAWAY (NO_ERROR + PROTOCOL_ERROR), PUSH_PROMISE
       rejection, FRAME_SIZE_ERROR enforcement
-- [x] Cross-test: `Interop: h2c live TCP client` — HTTP2.jl client
+- [x] Cross-test: `Interop: h2c live TCP client` — PureHTTP2.jl client
       vs `Nghttp2Wrapper.HTTP2Server` over raw TCP. First live
       client-role cross-test; completes in ~2s (well under the
       10-second CI budget)
@@ -321,7 +322,7 @@ for the client role** via a live TCP round trip against `libnghttp2`.
   `SSL_CTX_set_alpn_protos` — a no-op on a server context. The real
   fix is upstream in OpenSSL.jl.
 
-**Exit criteria met**: HTTP2.jl drives a request/response exchange as
+**Exit criteria met**: PureHTTP2.jl drives a request/response exchange as
 a client against nghttp2 without divergence on the parts that cross
 the wire. 24,809 main + 24,937 interop assertions + 1 documented
 broken.
@@ -334,11 +335,11 @@ broken.
 `008-first-tagged-release`, merged to main and tagged `v0.1.0`
 at release time; version `0.5.0 → 0.1.0`, 2026-04-12)
 
-First tagged release of HTTP2.jl on the Julia General registry.
+First tagged release of PureHTTP2.jl on the Julia General registry.
 The `/speckit.specify` clarification round picked **Option A** —
 retroactively bump `Project.toml` from `0.5.0` back to `0.1.0`
 and tag `v0.1.0`. The backwards bump is permitted because
-HTTP2.jl had never been registered; no downstream consumer had
+PureHTTP2.jl had never been registered; no downstream consumer had
 resolved a version higher than `0.1.0`. See the
 `## [0.1.0] — 2026-04-12` release section in `CHANGELOG.md` for
 the "Version renumber note" with the SemVer justification.
@@ -388,7 +389,7 @@ the "Version renumber note" with the SemVer justification.
 **Exit criteria (partial)**: the release commit with all file
 edits, tests green (24,809 main / 24,937 interop + 1 broken),
 and warning-free docs build is ready for review. The
-`Pkg.add("HTTP2")` installation verification from the spec is
+`Pkg.add("PureHTTP2")` installation verification from the spec is
 a Phase C task that runs after the registry PR merges and
 propagation completes — that is a post-milestone-timeline
 task, not a blocker for the release commit itself.
@@ -396,7 +397,7 @@ task, not a blocker for the release commit itself.
 **Deferred to post-M7 patch**: filing the two upstream GitHub
 issues (T022 / T023 via manual creation), updating the
 `Upstream link` fields in `upstream-bugs.md` to the resulting
-issue URLs, and running the Phase C `Pkg.add("HTTP2")`
+issue URLs, and running the Phase C `Pkg.add("PureHTTP2")`
 verification after registry propagation.
 
 ---
@@ -407,8 +408,8 @@ verification after registry propagation.
 `009-reseau-tls-backend`, merged to main and tagged `v0.2.0`
 at release time; version `0.1.0 → 0.2.0`, 2026-04-13)
 
-Server-side h2 over TLS — unblocked. HTTP2.jl ships a second
-optional TLS backend via a new `ext/HTTP2ReseauExt.jl`
+Server-side h2 over TLS — unblocked. PureHTTP2.jl ships a second
+optional TLS backend via a new `ext/PureHTTP2ReseauExt.jl`
 package extension that uses
 [Reseau.jl](https://github.com/JuliaServices/Reseau.jl)
 (pinned to v1.0.1 via the General registry). Reseau binds
@@ -421,23 +422,23 @@ server-side ALPN assertion was `@test_broken` is repointed at a
 Reseau TLS listener and flipped to a real `@test`.
 
 - [x] Add `Reseau = "802f3686-..."` to `[weakdeps]` +
-      `HTTP2ReseauExt = "Reseau"` to `[extensions]` in root
+      `PureHTTP2ReseauExt = "Reseau"` to `[extensions]` in root
       `Project.toml`. `[deps]` still empty.
-- [x] Export new `HTTP2.ALPN_H2_PROTOCOLS = ["h2"]` constant
-      from `src/HTTP2.jl` as the shared canonical ALPN list
-      for both `HTTP2OpenSSLExt` and `HTTP2ReseauExt`.
+- [x] Export new `PureHTTP2.ALPN_H2_PROTOCOLS = ["h2"]` constant
+      from `src/PureHTTP2.jl` as the shared canonical ALPN list
+      for both `PureHTTP2OpenSSLExt` and `PureHTTP2ReseauExt`.
 - [x] Export three new generic-function stubs from
-      `src/HTTP2.jl`: `reseau_h2_server_config`,
+      `src/PureHTTP2.jl`: `reseau_h2_server_config`,
       `reseau_h2_client_config`, `reseau_h2_connect`. Each has
       a full docstring explaining the constructor-style
       pattern and the symmetry-break with M5's `set_alpn_h2!`
       mutator.
-- [x] Create `ext/HTTP2ReseauExt.jl` (~70 lines) with the
+- [x] Create `ext/PureHTTP2ReseauExt.jl` (~70 lines) with the
       three method implementations. Each method merges
-      `alpn_protocols = HTTP2.ALPN_H2_PROTOCOLS` into the
+      `alpn_protocols = PureHTTP2.ALPN_H2_PROTOCOLS` into the
       caller's kwargs and forwards to `Reseau.TLS.Config` or
       `Reseau.TLS.connect`. Zero bridging code — Reseau's
-      `TLS.Conn <: IO` satisfies HTTP2.jl's IO adapter
+      `TLS.Conn <: IO` satisfies PureHTTP2.jl's IO adapter
       contract natively.
 - [x] Add `Reseau` to `test/interop/Project.toml` `[deps]` +
       `Reseau = "1"` in `[compat]`. Registry-resolved (no
@@ -446,15 +447,15 @@ Reseau TLS listener and flipped to a real `@test`.
       - `Interop: h2 live TLS handshake (server-role via Reseau)`
         — 8 assertions, ~0.7s, verifies both sides'
         `connection_state(conn).alpn_protocol == "h2"` after
-        a real TLS handshake through `HTTP2.reseau_h2_server_config`.
+        a real TLS handshake through `PureHTTP2.reseau_h2_server_config`.
       - `Interop: ALPN helper with Reseau extension` — 13
         assertions, regression test for the package-extension
         auto-load flow.
 - [x] Repoint M6's `Interop: set_alpn_h2! live TLS handshake`
       item: renamed to `... (Reseau server)`, server side
       swapped from `Nghttp2Wrapper.HTTP2Server` to a Reseau TLS
-      listener built via `HTTP2.reseau_h2_server_config`,
-      client side unchanged (OpenSSL.jl + `HTTP2.set_alpn_h2!`),
+      listener built via `PureHTTP2.reseau_h2_server_config`,
+      client side unchanged (OpenSSL.jl + `PureHTTP2.set_alpn_h2!`),
       `@test_broken selected == "h2"` flipped to `@test selected
       == "h2"`. **Interop broken counter drops 1 → 0.**
 - [x] `docs/src/tls.md` restructured: new "TLS backends"
@@ -465,9 +466,9 @@ Reseau TLS listener and flipped to a real `@test`.
       "Current limitations" updated to remove the
       server-side h2 TLS blocker.
 - [x] `docs/src/client.md` gains a new
-      `### Over TLS (h2) via HTTP2ReseauExt` subsection with a
-      worked example using `HTTP2.reseau_h2_connect` +
-      `HTTP2.open_connection!`.
+      `### Over TLS (h2) via PureHTTP2ReseauExt` subsection with a
+      worked example using `PureHTTP2.reseau_h2_connect` +
+      `PureHTTP2.open_connection!`.
 - [x] `upstream-bugs.md` OpenSSL.jl entry:
       `Status: open → worked-around via Reseau.jl`, full
       `Workaround` narrative rewrite.
@@ -482,38 +483,135 @@ Reseau TLS listener and flipped to a real `@test`.
   and the repointed M6 item; −1 broken).
 - Documenter build warning-free at v0.2.0.
 - `src/*.jl` files from M0–M6 untouched except for the
-  additive block in `src/HTTP2.jl` (one const + three function
+  additive block in `src/PureHTTP2.jl` (one const + three function
   stubs + exports + docstrings).
-- `ext/HTTP2OpenSSLExt.jl` untouched.
+- `ext/PureHTTP2OpenSSLExt.jl` untouched.
 - `.gitignore` untouched.
 - `docs/make.jl` pages array unchanged (still 10 entries).
+
+---
+
+## Rename milestone — `HTTP2` → `PureHTTP2` ✅
+
+**Status**: Completed (version `0.2.0 → 0.3.0`, tag `v0.3.0`)
+
+Rename the top-level Julia module, package name, and GitHub
+repository from `HTTP2` to `PureHTTP2`. Mechanical sweep across
+~35 files, zero functional change. The new name reflects the
+package's defining property — a **pure-Julia** HTTP/2 transport
+layer with an empty `[deps]` block (constitution Principle I) —
+and de-conflicts with the long-standing JuliaWeb `HTTP.jl`
+namespace.
+
+**Scope**:
+
+- [x] Root `Project.toml`: `name = "HTTP2"` → `"PureHTTP2"`,
+      `version = "0.2.0"` → `"0.3.0"`, `[extensions]` table
+      entries renamed `HTTP2OpenSSLExt`/`HTTP2ReseauExt` →
+      `PureHTTP2OpenSSLExt`/`PureHTTP2ReseauExt`. **UUID
+      unchanged** (`7d1e1b98-28e7-4969-8df9-5a308937986a`) —
+      Option C from `/speckit.specify` clarification, permitted
+      because `HTTP2` was never merged to General.
+- [x] `src/HTTP2.jl` → `src/PureHTTP2.jl` via `git mv`,
+      `module HTTP2` → `module PureHTTP2`, closing comment
+      updated. `include(...)` wiring and `export` list
+      byte-identical.
+- [x] `ext/HTTP2OpenSSLExt.jl` → `ext/PureHTTP2OpenSSLExt.jl`
+      and `ext/HTTP2ReseauExt.jl` → `ext/PureHTTP2ReseauExt.jl`
+      via `git mv`; module declarations + `function
+      PureHTTP2.<method>` bindings updated in lockstep so
+      Julia's extension loader still discovers them.
+- [x] 5 src doctest blocks (`frames.jl`, `hpack.jl`,
+      `stream.jl`, `flow_control.jl`, `connection.jl`) and
+      2 src docstring examples (`serve.jl`, `client.jl`)
+      sweep `using HTTP2` → `using PureHTTP2` + qualified
+      references.
+- [x] 9 `test/testitems_*.jl` files in the main env +
+      `test/interop/testitems_interop.jl` sweep `using HTTP2`,
+      `HTTP2.<symbol>`, `names(HTTP2)`,
+      `Base.get_extension(HTTP2, ...)`, and
+      `:HTTP2{Open,Re}` → `PureHTTP2` variants.
+- [x] `test/interop/Project.toml` `[deps]` entry name updated
+      (UUID unchanged); `[sources]` and `[compat]` untouched.
+- [x] `docs/Project.toml` `[deps]` entry renamed +
+      `Pkg.develop(path=...)` re-resolved the docs env.
+- [x] `docs/make.jl`: `using HTTP2` → `using PureHTTP2`,
+      `modules`, `sitename`, `canonical`, and `repo` fields
+      updated.
+- [x] 10 `docs/src/*.md` pages sweep package-name narrative,
+      `@docs HTTP2.<symbol>` → `@docs PureHTTP2.<symbol>` in
+      `api.md`, and GitHub/Pages URL updates.
+- [x] `README.md`, `upstream-bugs.md`, `ROADMAP.md`, and
+      `CLAUDE.md` active-technologies section swept.
+      Historical sections in `CHANGELOG.md` (v0.1.0, v0.2.0)
+      and ROADMAP M0/M1 historical content preserved verbatim
+      per research R11.
+- [x] `CHANGELOG.md` gains a new `## [0.3.0] — 2026-04-13`
+      section above `## [0.2.0]` with migration notes for
+      downstream consumers (two mechanical edits: rename
+      `Project.toml` dep, rename `using` declarations).
+
+**Two carve-outs** (intentional non-renames):
+
+- **Type names with `HTTP2` substring stay**:
+  `HTTP2Connection`, `HTTP2Stream`, `HTTP2Server`, etc. refer
+  to the HTTP/2 **protocol** per RFC 9113, not the package
+  name. Type identifiers and exports are unchanged.
+- **Function names with `h2` substring stay**:
+  `set_alpn_h2!`, `reseau_h2_server_config`,
+  `reseau_h2_client_config`, `reseau_h2_connect`,
+  `ALPN_H2_PROTOCOLS`. `h2` is the ALPN protocol identifier
+  per RFC 7301 §3.1 and should not be rewritten.
+
+**Exit criteria met**:
+
+- Main-env test suite: **24,809 pass / 0 fail / 0 broken**
+  (byte-identical to v0.2.0).
+- Interop-env test suite: **24,960 pass / 0 fail / 0 broken**
+  (byte-identical to v0.2.0).
+- Documenter build: **warning-free** at v0.3.0.
+- Zero behavior change — no new symbols, no removed symbols,
+  no method-table edits except the three-letter module prefix.
+- `.gitignore`, `LICENSE`, `.github/workflows/*` untouched
+  (operational scope audit).
+
+**Operational tail** (post-merge, manual):
+
+- Rename GitHub repository `s-celles/HTTP2.jl` →
+  `s-celles/PureHTTP2.jl`; GitHub installs an automatic
+  redirect so historical URLs in `CHANGELOG.md` continue to
+  resolve.
+- Cut tag `v0.3.0` from main.
+- Submit to Julia General registry via
+  `@JuliaRegistrator register()` bot comment (first-ever
+  registration under the new name).
 
 ---
 
 ## Milestone 8 — gRPCServer.jl Reverse Integration
 
 **Status**: Not started
-**Target version**: → `v0.3.0`
+**Target version**: → `v0.4.0`
 
-Close the loop: make gRPCServer.jl consume HTTP2.jl as a dependency
+Close the loop: make gRPCServer.jl consume PureHTTP2.jl as a dependency
 instead of vendoring its own copy. This is the acceptance test for
 the whole extraction.
 
-- [ ] Replace `gRPCServer/src/http2/**` with `import HTTP2` and delete
+- [ ] Replace `gRPCServer/src/http2/**` with `import PureHTTP2` and delete
       the vendored modules
 - [ ] Run gRPCServer.jl's full unit + integration + interop test
-      suites against HTTP2.jl
-- [ ] File any regressions discovered as issues on HTTP2.jl (not
+      suites against PureHTTP2.jl
+- [ ] File any regressions discovered as issues on PureHTTP2.jl (not
       gRPCServer.jl); fix them here and release a patch if needed
-- [ ] Cut HTTP2.jl minor-bump release once gRPCServer.jl is fully
+- [ ] Cut PureHTTP2.jl minor-bump release once gRPCServer.jl is fully
       swapped over
 - [ ] Consider re-evaluating the `src/stream.jl` gRPC-helpers
       layering concern recorded in `upstream-bugs.md` — with the
       reverse integration in place, moving those helpers from
-      HTTP2.jl to a gRPC adapter becomes straightforward
+      PureHTTP2.jl to a gRPC adapter becomes straightforward
 
 **Exit criteria**: gRPCServer.jl's CI is green against the latest
-HTTP2.jl release with its HTTP/2 sources removed.
+PureHTTP2.jl release with its HTTP/2 sources removed.
 
 ---
 

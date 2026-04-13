@@ -1,6 +1,6 @@
 # Milestone 6: client-role @testitems.
 #
-# These items exercise `HTTP2.open_connection!` over in-memory
+# These items exercise `PureHTTP2.open_connection!` over in-memory
 # `Base.IO` transports using paired `Base.BufferStream` instances
 # as a bidirectional pipe. Each item pre-populates the server→client
 # stream with a canned response sequence, then calls the client
@@ -15,7 +15,7 @@
 # FRAME_SIZE_ERROR enforcement.
 
 @testitem "Client: stream ID parity is odd" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO1 <: IO
         incoming::Base.BufferStream
@@ -33,21 +33,21 @@
     # Preload the server response: server SETTINGS + SETTINGS ACK +
     # HEADERS(END_STREAM) — a minimal 200 OK.
     server_headers = Tuple{String, String}[(":status", "200")]
-    decoder_probe = HTTP2.HPACKEncoder()
-    header_block = HTTP2.encode_headers(decoder_probe, server_headers)
+    decoder_probe = PureHTTP2.HPACKEncoder()
+    header_block = PureHTTP2.encode_headers(decoder_probe, server_headers)
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    resp = HTTP2.Frame(HTTP2.FrameType.HEADERS,
-                       HTTP2.FrameFlags.END_HEADERS | HTTP2.FrameFlags.END_STREAM,
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    resp = PureHTTP2.Frame(PureHTTP2.FrameType.HEADERS,
+                       PureHTTP2.FrameFlags.END_HEADERS | PureHTTP2.FrameFlags.END_STREAM,
                        UInt32(1), header_block)
-    write(server_to_client, HTTP2.encode_frame(resp))
+    write(server_to_client, PureHTTP2.encode_frame(resp))
 
     io = PairedIO1(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
     # Use a client HPACK encoder that shares the decoder's view by
     # letting the real client do both sides of HPACK itself.
-    HTTP2.open_connection!(conn, io;
+    PureHTTP2.open_connection!(conn, io;
         request_headers = Tuple{String, String}[
             (":method", "GET"), (":path", "/"),
             (":scheme", "http"), (":authority", "example.com")])
@@ -58,23 +58,23 @@
     close(client_to_server)
     client_bytes = read(client_to_server)
     @test length(client_bytes) > 24
-    @test client_bytes[1:24] == Vector{UInt8}(HTTP2.CONNECTION_PREFACE)
+    @test client_bytes[1:24] == Vector{UInt8}(PureHTTP2.CONNECTION_PREFACE)
 
     # Skip the preface (24 bytes) and the client SETTINGS frame.
     pos = 25
-    frame1, consumed1 = HTTP2.decode_frame(@view client_bytes[pos:end])
-    @test frame1.header.frame_type == HTTP2.FrameType.SETTINGS
+    frame1, consumed1 = PureHTTP2.decode_frame(@view client_bytes[pos:end])
+    @test frame1.header.frame_type == PureHTTP2.FrameType.SETTINGS
     pos += consumed1
 
     # Next should be the request HEADERS frame.
-    frame2, _consumed2 = HTTP2.decode_frame(@view client_bytes[pos:end])
-    @test frame2.header.frame_type == HTTP2.FrameType.HEADERS
+    frame2, _consumed2 = PureHTTP2.decode_frame(@view client_bytes[pos:end])
+    @test frame2.header.frame_type == PureHTTP2.FrameType.HEADERS
     @test frame2.header.stream_id == 1
     @test frame2.header.stream_id % 2 == 1  # odd
 end
 
 @testitem "Client: open_connection! with BufferStream pair" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO2 <: IO
         incoming::Base.BufferStream
@@ -90,23 +90,23 @@ end
     server_to_client = Base.BufferStream()
 
     # Preload: server SETTINGS + SETTINGS_ACK + HEADERS(END_STREAM).
-    encoder = HTTP2.HPACKEncoder()
+    encoder = PureHTTP2.HPACKEncoder()
     response_headers = Tuple{String, String}[
         (":status", "200"),
         ("content-type", "text/plain"),
     ]
-    header_block = HTTP2.encode_headers(encoder, response_headers)
+    header_block = PureHTTP2.encode_headers(encoder, response_headers)
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    resp_frame = HTTP2.Frame(HTTP2.FrameType.HEADERS,
-                             HTTP2.FrameFlags.END_HEADERS | HTTP2.FrameFlags.END_STREAM,
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    resp_frame = PureHTTP2.Frame(PureHTTP2.FrameType.HEADERS,
+                             PureHTTP2.FrameFlags.END_HEADERS | PureHTTP2.FrameFlags.END_STREAM,
                              UInt32(1), header_block)
-    write(server_to_client, HTTP2.encode_frame(resp_frame))
+    write(server_to_client, PureHTTP2.encode_frame(resp_frame))
 
     io = PairedIO2(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
-    result = HTTP2.open_connection!(conn, io;
+    conn = PureHTTP2.HTTP2Connection()
+    result = PureHTTP2.open_connection!(conn, io;
         request_headers = Tuple{String, String}[
             (":method", "GET"), (":path", "/"),
             (":scheme", "http"), (":authority", "example.com")])
@@ -117,7 +117,7 @@ end
 end
 
 @testitem "Client: END_STREAM on response HEADERS" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO3 <: IO
         incoming::Base.BufferStream
@@ -132,20 +132,20 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    encoder = HTTP2.HPACKEncoder()
+    encoder = PureHTTP2.HPACKEncoder()
     response_headers = Tuple{String, String}[(":status", "204")]
-    header_block = HTTP2.encode_headers(encoder, response_headers)
+    header_block = PureHTTP2.encode_headers(encoder, response_headers)
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    resp = HTTP2.Frame(HTTP2.FrameType.HEADERS,
-                      HTTP2.FrameFlags.END_HEADERS | HTTP2.FrameFlags.END_STREAM,
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    resp = PureHTTP2.Frame(PureHTTP2.FrameType.HEADERS,
+                      PureHTTP2.FrameFlags.END_HEADERS | PureHTTP2.FrameFlags.END_STREAM,
                       UInt32(1), header_block)
-    write(server_to_client, HTTP2.encode_frame(resp))
+    write(server_to_client, PureHTTP2.encode_frame(resp))
 
     io = PairedIO3(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
-    result = HTTP2.open_connection!(conn, io;
+    conn = PureHTTP2.HTTP2Connection()
+    result = PureHTTP2.open_connection!(conn, io;
         request_headers = Tuple{String, String}[
             (":method", "GET"), (":path", "/no-body"),
             (":scheme", "http"), (":authority", "example.com")])
@@ -157,7 +157,7 @@ end
 end
 
 @testitem "Client: server splits HEADERS across CONTINUATION" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO4 <: IO
         incoming::Base.BufferStream
@@ -174,36 +174,36 @@ end
 
     # Encode all headers as one block but split the bytes manually
     # across HEADERS + CONTINUATION frames.
-    encoder = HTTP2.HPACKEncoder()
+    encoder = PureHTTP2.HPACKEncoder()
     response_headers = Tuple{String, String}[
         (":status", "200"),
         ("x-header-one", "value-one"),
         ("x-header-two", "value-two"),
     ]
-    full_block = HTTP2.encode_headers(encoder, response_headers)
+    full_block = PureHTTP2.encode_headers(encoder, response_headers)
     split = max(1, div(length(full_block), 2))
     part1 = full_block[1:split]
     part2 = full_block[(split + 1):end]
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
 
     # HEADERS frame with END_STREAM but NOT END_HEADERS — part1 of
     # the header block.
-    h1 = HTTP2.Frame(HTTP2.FrameType.HEADERS,
-                     HTTP2.FrameFlags.END_STREAM,
+    h1 = PureHTTP2.Frame(PureHTTP2.FrameType.HEADERS,
+                     PureHTTP2.FrameFlags.END_STREAM,
                      UInt32(1), part1)
-    write(server_to_client, HTTP2.encode_frame(h1))
+    write(server_to_client, PureHTTP2.encode_frame(h1))
 
     # CONTINUATION frame with END_HEADERS — part2.
-    h2 = HTTP2.Frame(HTTP2.FrameType.CONTINUATION,
-                     HTTP2.FrameFlags.END_HEADERS,
+    h2 = PureHTTP2.Frame(PureHTTP2.FrameType.CONTINUATION,
+                     PureHTTP2.FrameFlags.END_HEADERS,
                      UInt32(1), part2)
-    write(server_to_client, HTTP2.encode_frame(h2))
+    write(server_to_client, PureHTTP2.encode_frame(h2))
 
     io = PairedIO4(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
-    result = HTTP2.open_connection!(conn, io;
+    conn = PureHTTP2.HTTP2Connection()
+    result = PureHTTP2.open_connection!(conn, io;
         request_headers = Tuple{String, String}[
             (":method", "GET"), (":path", "/"),
             (":scheme", "http"), (":authority", "example.com")])
@@ -215,7 +215,7 @@ end
 end
 
 @testitem "Client: DATA body collection" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO5 <: IO
         incoming::Base.BufferStream
@@ -230,37 +230,37 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    encoder = HTTP2.HPACKEncoder()
+    encoder = PureHTTP2.HPACKEncoder()
     response_headers = Tuple{String, String}[
         (":status", "200"),
         ("content-type", "application/octet-stream"),
     ]
-    header_block = HTTP2.encode_headers(encoder, response_headers)
+    header_block = PureHTTP2.encode_headers(encoder, response_headers)
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
 
     # HEADERS without END_STREAM, then three DATA frames.
-    h = HTTP2.Frame(HTTP2.FrameType.HEADERS,
-                    HTTP2.FrameFlags.END_HEADERS,
+    h = PureHTTP2.Frame(PureHTTP2.FrameType.HEADERS,
+                    PureHTTP2.FrameFlags.END_HEADERS,
                     UInt32(1), header_block)
-    write(server_to_client, HTTP2.encode_frame(h))
+    write(server_to_client, PureHTTP2.encode_frame(h))
 
     chunk1 = UInt8[0x41, 0x42, 0x43]  # "ABC"
     chunk2 = UInt8[0x44, 0x45]        # "DE"
     chunk3 = UInt8[0x46, 0x47, 0x48, 0x49]  # "FGHI"
 
-    d1 = HTTP2.Frame(HTTP2.FrameType.DATA, UInt8(0), UInt32(1), chunk1)
-    d2 = HTTP2.Frame(HTTP2.FrameType.DATA, UInt8(0), UInt32(1), chunk2)
-    d3 = HTTP2.Frame(HTTP2.FrameType.DATA, HTTP2.FrameFlags.END_STREAM, UInt32(1), chunk3)
+    d1 = PureHTTP2.Frame(PureHTTP2.FrameType.DATA, UInt8(0), UInt32(1), chunk1)
+    d2 = PureHTTP2.Frame(PureHTTP2.FrameType.DATA, UInt8(0), UInt32(1), chunk2)
+    d3 = PureHTTP2.Frame(PureHTTP2.FrameType.DATA, PureHTTP2.FrameFlags.END_STREAM, UInt32(1), chunk3)
 
-    write(server_to_client, HTTP2.encode_frame(d1))
-    write(server_to_client, HTTP2.encode_frame(d2))
-    write(server_to_client, HTTP2.encode_frame(d3))
+    write(server_to_client, PureHTTP2.encode_frame(d1))
+    write(server_to_client, PureHTTP2.encode_frame(d2))
+    write(server_to_client, PureHTTP2.encode_frame(d3))
 
     io = PairedIO5(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
-    result = HTTP2.open_connection!(conn, io;
+    conn = PureHTTP2.HTTP2Connection()
+    result = PureHTTP2.open_connection!(conn, io;
         request_headers = Tuple{String, String}[
             (":method", "GET"), (":path", "/bin"),
             (":scheme", "http"), (":authority", "example.com")])
@@ -271,7 +271,7 @@ end
 end
 
 @testitem "Client: receive RST_STREAM" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO6 <: IO
         incoming::Base.BufferStream
@@ -286,17 +286,17 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
     # Server sends RST_STREAM with CANCEL on stream 1.
-    rst = HTTP2.rst_stream_frame(UInt32(1), HTTP2.ErrorCode.CANCEL)
-    write(server_to_client, HTTP2.encode_frame(rst))
+    rst = PureHTTP2.rst_stream_frame(UInt32(1), PureHTTP2.ErrorCode.CANCEL)
+    write(server_to_client, PureHTTP2.encode_frame(rst))
 
     io = PairedIO6(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     err = try
-        HTTP2.open_connection!(conn, io;
+        PureHTTP2.open_connection!(conn, io;
             request_headers = Tuple{String, String}[
                 (":method", "GET"), (":path", "/"),
                 (":scheme", "http"), (":authority", "example.com")])
@@ -305,13 +305,13 @@ end
         e
     end
 
-    @test err isa HTTP2.StreamError
+    @test err isa PureHTTP2.StreamError
     @test err.stream_id == UInt32(1)
-    @test err.error_code == HTTP2.ErrorCode.CANCEL
+    @test err.error_code == PureHTTP2.ErrorCode.CANCEL
 end
 
 @testitem "Client: receive GOAWAY (NO_ERROR)" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO7 <: IO
         incoming::Base.BufferStream
@@ -326,19 +326,19 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
     # GOAWAY(NO_ERROR) before any response HEADERS — server refuses
     # to serve the request gracefully. Client should raise a
     # ConnectionError because the response was never received.
-    goaway = HTTP2.goaway_frame(0, HTTP2.ErrorCode.NO_ERROR)
-    write(server_to_client, HTTP2.encode_frame(goaway))
+    goaway = PureHTTP2.goaway_frame(0, PureHTTP2.ErrorCode.NO_ERROR)
+    write(server_to_client, PureHTTP2.encode_frame(goaway))
 
     io = PairedIO7(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     err = try
-        HTTP2.open_connection!(conn, io;
+        PureHTTP2.open_connection!(conn, io;
             request_headers = Tuple{String, String}[
                 (":method", "GET"), (":path", "/"),
                 (":scheme", "http"), (":authority", "example.com")])
@@ -347,12 +347,12 @@ end
         e
     end
 
-    @test err isa HTTP2.ConnectionError
-    @test conn.state == HTTP2.ConnectionState.CLOSING
+    @test err isa PureHTTP2.ConnectionError
+    @test conn.state == PureHTTP2.ConnectionState.CLOSING
 end
 
 @testitem "Client: receive GOAWAY (PROTOCOL_ERROR)" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO8 <: IO
         incoming::Base.BufferStream
@@ -367,16 +367,16 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    goaway = HTTP2.goaway_frame(0, HTTP2.ErrorCode.PROTOCOL_ERROR)
-    write(server_to_client, HTTP2.encode_frame(goaway))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    goaway = PureHTTP2.goaway_frame(0, PureHTTP2.ErrorCode.PROTOCOL_ERROR)
+    write(server_to_client, PureHTTP2.encode_frame(goaway))
 
     io = PairedIO8(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     err = try
-        HTTP2.open_connection!(conn, io;
+        PureHTTP2.open_connection!(conn, io;
             request_headers = Tuple{String, String}[
                 (":method", "GET"), (":path", "/"),
                 (":scheme", "http"), (":authority", "example.com")])
@@ -385,13 +385,13 @@ end
         e
     end
 
-    @test err isa HTTP2.ConnectionError
-    @test err.error_code == HTTP2.ErrorCode.PROTOCOL_ERROR
-    @test conn.state == HTTP2.ConnectionState.CLOSED
+    @test err isa PureHTTP2.ConnectionError
+    @test err.error_code == PureHTTP2.ErrorCode.PROTOCOL_ERROR
+    @test conn.state == PureHTTP2.ConnectionState.CLOSED
 end
 
 @testitem "Client: reject PUSH_PROMISE when ENABLE_PUSH=0" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO9 <: IO
         incoming::Base.BufferStream
@@ -406,23 +406,23 @@ end
     client_to_server = Base.BufferStream()
     server_to_client = Base.BufferStream()
 
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
 
     # Hand-craft a PUSH_PROMISE frame targeting stream 1. Payload:
     # 4 bytes promised stream ID (2, even) + arbitrary header block.
     push_payload = UInt8[0x00, 0x00, 0x00, 0x02,  # promised stream = 2
                          0x00]  # empty header block (invalid but OK for error test)
-    push = HTTP2.Frame(HTTP2.FrameType.PUSH_PROMISE,
-                       HTTP2.FrameFlags.END_HEADERS,
+    push = PureHTTP2.Frame(PureHTTP2.FrameType.PUSH_PROMISE,
+                       PureHTTP2.FrameFlags.END_HEADERS,
                        UInt32(1), push_payload)
-    write(server_to_client, HTTP2.encode_frame(push))
+    write(server_to_client, PureHTTP2.encode_frame(push))
 
     io = PairedIO9(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     err = try
-        HTTP2.open_connection!(conn, io;
+        PureHTTP2.open_connection!(conn, io;
             request_headers = Tuple{String, String}[
                 (":method", "GET"), (":path", "/"),
                 (":scheme", "http"), (":authority", "example.com")])
@@ -431,12 +431,12 @@ end
         e
     end
 
-    @test err isa HTTP2.ConnectionError
-    @test err.error_code == HTTP2.ErrorCode.PROTOCOL_ERROR
+    @test err isa PureHTTP2.ConnectionError
+    @test err.error_code == PureHTTP2.ErrorCode.PROTOCOL_ERROR
 end
 
 @testitem "Client: frame size exceeding max_frame_size" begin
-    using HTTP2
+    using PureHTTP2
 
     mutable struct PairedIO10 <: IO
         incoming::Base.BufferStream
@@ -455,15 +455,15 @@ end
     # max of 16384). Use a small max_frame_size limit on the client
     # side to trigger FRAME_SIZE_ERROR on the very first frame after
     # the handshake.
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(server_to_client, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(server_to_client, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
 
     # Bad frame header: length 100, type DATA, flags 0, stream 1.
     # Follow with 100 payload bytes so the frame is well-formed
     # enough to read — but max_frame_size=50 will reject it.
     bad_header = UInt8[
         0x00, 0x00, 0x64,  # length = 100
-        UInt8(HTTP2.FrameType.DATA),
+        UInt8(PureHTTP2.FrameType.DATA),
         0x00,              # flags
         0x00, 0x00, 0x00, 0x01,  # stream 1
     ]
@@ -471,10 +471,10 @@ end
     write(server_to_client, zeros(UInt8, 100))
 
     io = PairedIO10(server_to_client, client_to_server)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     err = try
-        HTTP2.open_connection!(conn, io;
+        PureHTTP2.open_connection!(conn, io;
             request_headers = Tuple{String, String}[
                 (":method", "GET"), (":path", "/"),
                 (":scheme", "http"), (":authority", "example.com")],
@@ -484,6 +484,6 @@ end
         e
     end
 
-    @test err isa HTTP2.ConnectionError
-    @test err.error_code == HTTP2.ErrorCode.FRAME_SIZE_ERROR
+    @test err isa PureHTTP2.ConnectionError
+    @test err.error_code == PureHTTP2.ErrorCode.FRAME_SIZE_ERROR
 end

@@ -1,6 +1,6 @@
-name = "HTTP2"
+name = "PureHTTP2"
 uuid = "7d1e1b98-28e7-4969-8df9-5a308937986a"
-version = "0.2.0"
+version = "0.3.0"
 authors = ["Sébastien Celles"]
 
 [deps]
@@ -10,8 +10,8 @@ OpenSSL = "4d8831e6-92b7-49fb-bdf8-b643e874388c"
 Reseau = "802f3686-a58f-41ce-bb0c-3c43c75bba36"
 
 [extensions]
-HTTP2OpenSSLExt = "OpenSSL"
-HTTP2ReseauExt = "Reseau"
+PureHTTP2OpenSSLExt = "OpenSSL"
+PureHTTP2ReseauExt = "Reseau"
 
 [compat]
 TestItemRunner = "1"

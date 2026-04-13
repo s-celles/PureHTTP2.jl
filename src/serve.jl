@@ -19,7 +19,7 @@
 
 Drive an [`HTTP2Connection`](@ref) over an arbitrary `Base.IO` transport.
 
-This is HTTP2.jl's primary server-side entry point for real traffic.
+This is PureHTTP2.jl's primary server-side entry point for real traffic.
 The function:
 
 1. Reads the 24-byte client connection preface and validates it via
@@ -51,7 +51,7 @@ contract. The minimum: `Base.read(io, n::Int)`, `Base.write(io, bytes)`,
 # Example
 
 ```julia
-using HTTP2, Sockets
+using PureHTTP2, Sockets
 
 server = listen(8080)
 while true

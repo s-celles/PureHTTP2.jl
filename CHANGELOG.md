@@ -1,11 +1,104 @@
 # Changelog
 
-All notable changes to HTTP2.jl will be documented in this file.
+All notable changes to PureHTTP2.jl will be documented in this file.
 
 The format is based on [Keep a Changelog 1.1.0](https://keepachangelog.com/en/1.1.0/),
-and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
+and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.3.0] — 2026-04-13
+
+**Package rename: `HTTP2` → `PureHTTP2`.** The top-level Julia
+module, package name, and GitHub repository are renamed from
+`HTTP2` to `PureHTTP2`. The new name reflects the package's
+defining property — a **pure-Julia** HTTP/2 transport layer
+with an empty `[deps]` block (constitution Principle I) —
+and de-conflicts with the long-standing JuliaWeb `HTTP.jl`
+namespace. No functional changes: byte-identical behavior to
+v0.2.0 modulo the module name. The UUID
+`7d1e1b98-28e7-4969-8df9-5a308937986a` is **unchanged** because
+the `HTTP2` name had never been published to the Julia General
+registry, so no cutover record exists to preserve.
+
+### Migration
+
+Downstream consumers need two mechanical edits:
+
+1. In `Project.toml`, rename the dependency:
+
+   ```diff
+   [deps]
+   -HTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
+   +PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
+   ```
+
+   (the UUID is identical — only the name changes.)
+
+2. In source files, rename the module:
+
+   ```diff
+   -using HTTP2
+   +using PureHTTP2
+   ```
+
+   Qualified references `HTTP2.<symbol>` become
+   `PureHTTP2.<symbol>`. All exported symbols, type names,
+   function signatures, and method tables are preserved.
+   `HTTP2Connection`, `HTTP2Stream`, `HTTP2Server`, and similar
+   **type names** are unchanged — the `HTTP2` prefix refers to
+   the HTTP/2 protocol per RFC 9113, not the package name.
+   `set_alpn_h2!` and the `reseau_h2_*` helpers are likewise
+   unchanged — `h2` is the ALPN protocol identifier per
+   RFC 7301 §3.1.
+
+### Changed
+
+- **Package name**: `HTTP2` → `PureHTTP2` in root
+  `Project.toml`. UUID unchanged.
+- **Top-level module**: `src/HTTP2.jl` → `src/PureHTTP2.jl`,
+  `module HTTP2` → `module PureHTTP2`. `include(...)` wiring
+  and `export` list are byte-identical.
+- **Package extensions**: `HTTP2OpenSSLExt` → `PureHTTP2OpenSSLExt`
+  and `HTTP2ReseauExt` → `PureHTTP2ReseauExt`. Both the
+  `[extensions]` table in `Project.toml` and the module
+  declarations in `ext/*.jl` are updated; the extension
+  filenames are renamed in lockstep so Julia's extension
+  loader still discovers them.
+- **Documentation**: `docs/make.jl` `sitename`, `canonical`,
+  and `repo` fields updated to `PureHTTP2.jl`; every
+  `docs/src/*.md` page sweeps `HTTP2 → PureHTTP2` in prose,
+  code blocks, and `@docs` blocks. Historical sections in
+  `CHANGELOG.md` (v0.1.0, v0.2.0) are preserved verbatim.
+- **Tests**: 9 `test/testitems_*.jl` files + `test/interop/testitems_interop.jl`
+  sweep `using HTTP2 → using PureHTTP2` and qualified references.
+  `test/interop/Project.toml` updates the `[deps]` entry name
+  (UUID unchanged).
+- **Version**: `0.2.0 → 0.3.0` (minor bump — rename is a
+  breaking change for downstream consumers but carries zero
+  functional change; minor-bump chosen because the package has
+  never been registered so no SemVer backwards-compatibility
+  contract exists).
+
+### Notes
+
+- **No new symbols, no removed symbols, no behavior change.**
+  The main-env test suite stays at **24,809 pass** / **0 fail**
+  / **0 broken**. The interop-env suite stays at **24,960 pass**
+  / **0 fail** / **0 broken**. Documenter build remains
+  warning-free.
+- **UUID preservation**: Q1 clarification chose Option C
+  (keep existing UUID) over Option A (freshly generated UUID),
+  because HTTP2.jl was never merged to General and no cutover
+  record exists. Consumers who locally
+  `Pkg.develop(path=...)`'d the old repo only need the two
+  `Project.toml`/`using` edits above.
+- **Operational tail (out of scope for this release)**: the
+  GitHub repository `s-celles/HTTP2.jl` will be renamed to
+  `s-celles/PureHTTP2.jl` in a follow-up operational step;
+  GitHub automatically installs a redirect from the old URL,
+  so outbound links in historical CHANGELOG entries and git
+  history continue to resolve.
 
 ## [0.2.0] — 2026-04-13
 

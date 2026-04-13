@@ -1,5 +1,5 @@
 [deps]
-HTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
+PureHTTP2 = "7d1e1b98-28e7-4969-8df9-5a308937986a"
 JSON = "682c06a0-de6a-54ab-a142-c8b1cf79cde6"
 Nghttp2Wrapper = "aac3f40a-7475-434e-9d89-bbdc1574c652"
 # OpenSSL is needed by the ALPN / TLS interop testitems
@@ -21,11 +21,11 @@ TestItemRunner = "f8b46487-2199-4994-9208-9a1283c18c0a"
 
 # [sources] pins Nghttp2Wrapper to a specific git rev since the package
 # is not registered on the Julia General registry. Requires Julia ≥ 1.11
-# (this env's compat floor is 1.12). The `HTTP2` entry uses path="../.."
+# (this env's compat floor is 1.12). The `PureHTTP2` entry uses path="../.."
 # so CI can `Pkg.instantiate()` from a fresh checkout without a separate
 # `Pkg.develop(path=pwd())` step.
 [sources]
-HTTP2 = {path = "../.."}
+PureHTTP2 = {path = "../.."}
 Nghttp2Wrapper = {url = "https://github.com/s-celles/Nghttp2Wrapper.jl", rev = "c2e2a06506faab7bf7eb0dec9fd6c7f34ab6941b"}
 
 [compat]

@@ -71,78 +71,78 @@ function load_story(path::AbstractString)
 end
 end # @testmodule HPACKFixtures
 @testitem "HPACK conformance: nghttp2" setup=[HPACKFixtures] begin
-    using HTTP2
+    using PureHTTP2
     stories_tested = Ref(0)
     cases_tested = Ref(0)
     for story_path in HPACKFixtures.all_stories("nghttp2")
         stories_tested[] += 1
         cases = HPACKFixtures.load_story(story_path)
-        decoder = HTTP2.HPACKDecoder()
+        decoder = PureHTTP2.HPACKDecoder()
         for case in cases
             cases_tested[] += 1
-            decoded = HTTP2.decode_headers(decoder, case.wire)
+            decoded = PureHTTP2.decode_headers(decoder, case.wire)
             @test decoded == case.headers
             # Round-trip: re-encode the decoded list with a fresh encoder
             # and re-decode with a fresh decoder, compare to the original.
             # HPACK is not byte-unique so we compare logical header lists,
             # not encoded bytes.
-            encoder2 = HTTP2.HPACKEncoder()
-            decoder2 = HTTP2.HPACKDecoder()
-            re_encoded = HTTP2.encode_headers(encoder2, decoded)
-            re_decoded = HTTP2.decode_headers(decoder2, re_encoded)
+            encoder2 = PureHTTP2.HPACKEncoder()
+            decoder2 = PureHTTP2.HPACKDecoder()
+            re_encoded = PureHTTP2.encode_headers(encoder2, decoded)
+            re_decoded = PureHTTP2.decode_headers(decoder2, re_encoded)
             @test re_decoded == decoded
         end
     end
     @info "HPACK conformance: nghttp2 — $(stories_tested[]) stories, $(cases_tested[]) cases"
 end
 @testitem "HPACK conformance: go-hpack" setup=[HPACKFixtures] begin
-    using HTTP2
+    using PureHTTP2
     stories_tested = Ref(0)
     cases_tested = Ref(0)
     for story_path in HPACKFixtures.all_stories("go-hpack")
         stories_tested[] += 1
         cases = HPACKFixtures.load_story(story_path)
-        decoder = HTTP2.HPACKDecoder()
+        decoder = PureHTTP2.HPACKDecoder()
         for case in cases
             cases_tested[] += 1
-            decoded = HTTP2.decode_headers(decoder, case.wire)
+            decoded = PureHTTP2.decode_headers(decoder, case.wire)
             @test decoded == case.headers
-            encoder2 = HTTP2.HPACKEncoder()
-            decoder2 = HTTP2.HPACKDecoder()
-            re_encoded = HTTP2.encode_headers(encoder2, decoded)
-            re_decoded = HTTP2.decode_headers(decoder2, re_encoded)
+            encoder2 = PureHTTP2.HPACKEncoder()
+            decoder2 = PureHTTP2.HPACKDecoder()
+            re_encoded = PureHTTP2.encode_headers(encoder2, decoded)
+            re_decoded = PureHTTP2.decode_headers(decoder2, re_encoded)
             @test re_decoded == decoded
         end
     end
     @info "HPACK conformance: go-hpack — $(stories_tested[]) stories, $(cases_tested[]) cases"
 end
 @testitem "HPACK conformance: python-hpack" setup=[HPACKFixtures] begin
-    using HTTP2
+    using PureHTTP2
     stories_tested = Ref(0)
     cases_tested = Ref(0)
     for story_path in HPACKFixtures.all_stories("python-hpack")
         stories_tested[] += 1
         cases = HPACKFixtures.load_story(story_path)
-        decoder = HTTP2.HPACKDecoder()
+        decoder = PureHTTP2.HPACKDecoder()
         for case in cases
             cases_tested[] += 1
-            decoded = HTTP2.decode_headers(decoder, case.wire)
+            decoded = PureHTTP2.decode_headers(decoder, case.wire)
             @test decoded == case.headers
-            encoder2 = HTTP2.HPACKEncoder()
-            decoder2 = HTTP2.HPACKDecoder()
-            re_encoded = HTTP2.encode_headers(encoder2, decoded)
-            re_decoded = HTTP2.decode_headers(decoder2, re_encoded)
+            encoder2 = PureHTTP2.HPACKEncoder()
+            decoder2 = PureHTTP2.HPACKDecoder()
+            re_encoded = PureHTTP2.encode_headers(encoder2, decoded)
+            re_decoded = PureHTTP2.decode_headers(decoder2, re_encoded)
             @test re_decoded == decoded
         end
     end
     @info "HPACK conformance: python-hpack — $(stories_tested[]) stories, $(cases_tested[]) cases"
 end
 @testitem "HPACK conformance: raw-data" setup=[HPACKFixtures] begin
-    using HTTP2
+    using PureHTTP2
     # The raw-data producer ships only `headers` — it is the raw input to
     # encoder implementations, not a source of HPACK wire bytes. The check
     # here is therefore an encoder-self-test: encode each header list with
-    # HTTP2.jl and decode with HTTP2.jl, then compare to the original.
+    # PureHTTP2.jl and decode with PureHTTP2.jl, then compare to the original.
     stories_tested = Ref(0)
     cases_tested = Ref(0)
     for story_path in HPACKFixtures.all_stories("raw-data")
@@ -150,10 +150,10 @@ end
         cases = HPACKFixtures.load_story(story_path)
         for case in cases
             cases_tested[] += 1
-            encoder = HTTP2.HPACKEncoder()
-            decoder = HTTP2.HPACKDecoder()
-            encoded = HTTP2.encode_headers(encoder, case.headers)
-            decoded = HTTP2.decode_headers(decoder, encoded)
+            encoder = PureHTTP2.HPACKEncoder()
+            decoder = PureHTTP2.HPACKDecoder()
+            encoded = PureHTTP2.encode_headers(encoder, case.headers)
+            decoded = PureHTTP2.decode_headers(decoder, encoded)
             @test decoded == case.headers
         end
     end

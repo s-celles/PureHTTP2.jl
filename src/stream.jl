@@ -1,4 +1,4 @@
-# HTTP/2 stream state machine for HTTP2.jl
+# HTTP/2 stream state machine for PureHTTP2.jl
 # Per RFC 7540 Section 5: Streams and Multiplexing
 
 # Note: frames.jl must be included before this file
@@ -71,7 +71,7 @@ Represents an HTTP/2 stream with state machine and data buffers.
 # Example
 
 ```jldoctest
-julia> using HTTP2
+julia> using PureHTTP2
 
 julia> stream = HTTP2Stream(UInt32(1));
 

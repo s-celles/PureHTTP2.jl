@@ -1,6 +1,6 @@
 # Client
 
-Milestone 6 delivers HTTP2.jl's client-role entry point:
+Milestone 6 delivers PureHTTP2.jl's client-role entry point:
 [`open_connection!`](@ref). It is the symmetric counterpart to
 [`serve_connection!`](@ref) from Milestone 5 and reuses the exact
 same IO adapter contract, so any transport that works on the
@@ -15,7 +15,7 @@ HTTP/2 is a symmetric wire protocol but the two peers play
 opens streams with odd IDs, the server uses even IDs for
 server-initiated push; the client typically sets
 `SETTINGS_ENABLE_PUSH = 0` to opt out of server push, while the
-server advertises its own initial SETTINGS. HTTP2.jl reflects
+server advertises its own initial SETTINGS. PureHTTP2.jl reflects
 this asymmetry with two entry points:
 
 | Role   | Entry point            | Delivered in |
@@ -30,20 +30,20 @@ until the peer's preface arrives on the server side) and in
 **how they classify incoming HEADERS frames** (request HEADERS
 on the server, response HEADERS on the client).
 
-## Driving HTTP2.jl as a client
+## Driving PureHTTP2.jl as a client
 
 ### Over cleartext TCP (h2c)
 
 The simplest deployment is h2c over loopback or a trusted
-network. HTTP2.jl's client pump takes a raw `Sockets.TCPSocket`
+network. PureHTTP2.jl's client pump takes a raw `Sockets.TCPSocket`
 and handles everything else:
 
 ```julia
-using HTTP2, Sockets
+using PureHTTP2, Sockets
 
 tcp = connect(IPv4("127.0.0.1"), 8080)
 conn = HTTP2Connection()
-result = HTTP2.open_connection!(conn, tcp;
+result = PureHTTP2.open_connection!(conn, tcp;
     request_headers = Tuple{String, String}[
         (":method", "GET"),
         (":path", "/"),
@@ -62,24 +62,24 @@ This pattern has been cross-tested against the reference
 `Interop: h2c live TCP client` item at
 `test/interop/testitems_interop.jl`.
 
-### Over TLS (h2) via `HTTP2OpenSSLExt`
+### Over TLS (h2) via `PureHTTP2OpenSSLExt`
 
 For h2 over TLS, wrap the TCP socket in an `OpenSSL.SSLStream`
 after configuring ALPN via the [`set_alpn_h2!`](@ref) helper
-provided by the [`HTTP2OpenSSLExt`](tls.md) package extension:
+provided by the [`PureHTTP2OpenSSLExt`](tls.md) package extension:
 
 ```julia
-using HTTP2, OpenSSL, Sockets
+using PureHTTP2, OpenSSL, Sockets
 
 ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
-HTTP2.set_alpn_h2!(ctx)  # advertise "h2" to the server
+PureHTTP2.set_alpn_h2!(ctx)  # advertise "h2" to the server
 
 tcp = connect(IPv4("127.0.0.1"), 8443)
 tls = OpenSSL.SSLStream(ctx, tcp)
 OpenSSL.connect(tls)
 
 conn = HTTP2Connection()
-result = HTTP2.open_connection!(conn, tls;
+result = PureHTTP2.open_connection!(conn, tls;
     request_headers = Tuple{String, String}[
         (":method", "GET"),
         (":path", "/"),
@@ -91,11 +91,11 @@ close(tls)
 ```
 
 The TLS setup — context construction, ALPN registration,
-handshake — is the caller's responsibility. HTTP2.jl takes
+handshake — is the caller's responsibility. PureHTTP2.jl takes
 any `::IO`, which keeps its runtime dependency graph empty
 (constitution Principle I preserved).
 
-### Over TLS (h2) via `HTTP2ReseauExt`
+### Over TLS (h2) via `PureHTTP2ReseauExt`
 
 Milestone 7.5 adds a second TLS backend:
 [Reseau.jl](https://github.com/JuliaServices/Reseau.jl). Reseau
@@ -103,21 +103,21 @@ binds `SSL_CTX_set_alpn_select_cb` (the server-side ALPN
 selection callback that OpenSSL.jl does not yet expose), so if
 you need server-side h2 over TLS, Reseau is the recommended
 backend. Client-side h2 works through Reseau too — the
-`HTTP2ReseauExt` extension ships a one-shot helper:
+`PureHTTP2ReseauExt` extension ships a one-shot helper:
 
 ```julia
-using HTTP2, Reseau
+using PureHTTP2, Reseau
 
 # reseau_h2_connect calls Reseau.TLS.connect(address; ...)
 # with alpn_protocols=["h2"] merged in and returns a
-# fully-handshaken Reseau.TLS.Conn (which satisfies HTTP2.jl's
+# fully-handshaken Reseau.TLS.Conn (which satisfies PureHTTP2.jl's
 # IO adapter contract natively — no wrapper needed).
-client = HTTP2.reseau_h2_connect("tcp", "127.0.0.1:8443";
+client = PureHTTP2.reseau_h2_connect("tcp", "127.0.0.1:8443";
     server_name = "127.0.0.1",
     verify_peer = false)  # self-signed fixture; omit for prod
 
 conn = HTTP2Connection()
-result = HTTP2.open_connection!(conn, client;
+result = PureHTTP2.open_connection!(conn, client;
     request_headers = Tuple{String, String}[
         (":method",    "GET"),
         (":path",      "/"),
@@ -128,7 +128,7 @@ result = HTTP2.open_connection!(conn, client;
 close(client)
 ```
 
-Both the `HTTP2OpenSSLExt` path (above) and the `HTTP2ReseauExt`
+Both the `PureHTTP2OpenSSLExt` path (above) and the `PureHTTP2ReseauExt`
 path coexist — neither displaces the other. See
 [TLS & transport](tls.md) for the full comparison of the two
 backends, docstrings for all three `reseau_h2_*` helpers, and
@@ -137,7 +137,7 @@ the constructor-vs-mutator symmetry-break between them.
 ## The `open_connection!` contract
 
 ```@docs
-HTTP2.open_connection!
+PureHTTP2.open_connection!
 ```
 
 ## Receiving responses
@@ -212,9 +212,9 @@ and are expected at Milestone 7+:
   selected by Nghttp2Wrapper.jl's server because
   `SSL_CTX_set_alpn_select_cb` is not yet bound. See
   `upstream-bugs.md` at the repository root for the full chain.
-  HTTP2.jl itself does not serve h2 over TLS at M6.
+  PureHTTP2.jl itself does not serve h2 over TLS at M6.
 - **URL parsing / HTTP semantics**: the caller provides pseudo-
-  headers directly. HTTP2.jl is a transport layer, not an HTTP
+  headers directly. PureHTTP2.jl is a transport layer, not an HTTP
   client. Redirects, cookies, authentication, and content
   negotiation are application-layer concerns.
 

@@ -1,4 +1,4 @@
-# HPACK header compression for HTTP2.jl
+# HPACK header compression for PureHTTP2.jl
 # Per RFC 7541: HPACK: Header Compression for HTTP/2
 
 """
@@ -751,7 +751,7 @@ saves bytes.
 # Example
 
 ```jldoctest
-julia> using HTTP2
+julia> using PureHTTP2
 
 julia> encoder = HPACKEncoder();
 

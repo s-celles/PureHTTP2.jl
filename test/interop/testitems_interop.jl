@@ -3,7 +3,7 @@
 # See docs/src/nghttp2-parity.md for the RFC-cited verdict table.
 
 @testitem "Interop: preface bytes" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §3.4: client MUST send the 24-byte connection preface.
     cb = Callbacks()
@@ -17,7 +17,7 @@
 
             # The first 24 bytes MUST be the client magic (connection preface).
             @test length(out) >= 24
-            @test out[1:24] == Vector{UInt8}(HTTP2.CONNECTION_PREFACE)
+            @test out[1:24] == Vector{UInt8}(PureHTTP2.CONNECTION_PREFACE)
         finally
             nghttp2_session_del(session_ptr)
         end
@@ -27,49 +27,49 @@
 end
 
 @testitem "Interop: frame type constants" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6: each frame type has a fixed single-byte encoding.
-    @test HTTP2.FrameType.DATA          == Nghttp2Wrapper.NGHTTP2_DATA
-    @test HTTP2.FrameType.HEADERS       == Nghttp2Wrapper.NGHTTP2_HEADERS
-    @test HTTP2.FrameType.PRIORITY      == Nghttp2Wrapper.NGHTTP2_PRIORITY
-    @test HTTP2.FrameType.RST_STREAM    == Nghttp2Wrapper.NGHTTP2_RST_STREAM
-    @test HTTP2.FrameType.SETTINGS      == Nghttp2Wrapper.NGHTTP2_SETTINGS
-    @test HTTP2.FrameType.PUSH_PROMISE  == Nghttp2Wrapper.NGHTTP2_PUSH_PROMISE
-    @test HTTP2.FrameType.PING          == Nghttp2Wrapper.NGHTTP2_PING
-    @test HTTP2.FrameType.GOAWAY        == Nghttp2Wrapper.NGHTTP2_GOAWAY
-    @test HTTP2.FrameType.WINDOW_UPDATE == Nghttp2Wrapper.NGHTTP2_WINDOW_UPDATE
-    @test HTTP2.FrameType.CONTINUATION  == Nghttp2Wrapper.NGHTTP2_CONTINUATION
+    @test PureHTTP2.FrameType.DATA          == Nghttp2Wrapper.NGHTTP2_DATA
+    @test PureHTTP2.FrameType.HEADERS       == Nghttp2Wrapper.NGHTTP2_HEADERS
+    @test PureHTTP2.FrameType.PRIORITY      == Nghttp2Wrapper.NGHTTP2_PRIORITY
+    @test PureHTTP2.FrameType.RST_STREAM    == Nghttp2Wrapper.NGHTTP2_RST_STREAM
+    @test PureHTTP2.FrameType.SETTINGS      == Nghttp2Wrapper.NGHTTP2_SETTINGS
+    @test PureHTTP2.FrameType.PUSH_PROMISE  == Nghttp2Wrapper.NGHTTP2_PUSH_PROMISE
+    @test PureHTTP2.FrameType.PING          == Nghttp2Wrapper.NGHTTP2_PING
+    @test PureHTTP2.FrameType.GOAWAY        == Nghttp2Wrapper.NGHTTP2_GOAWAY
+    @test PureHTTP2.FrameType.WINDOW_UPDATE == Nghttp2Wrapper.NGHTTP2_WINDOW_UPDATE
+    @test PureHTTP2.FrameType.CONTINUATION  == Nghttp2Wrapper.NGHTTP2_CONTINUATION
 end
 
 @testitem "Interop: flag constants" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6: frame flags carry per-type meaning.
     # Nghttp2Wrapper exports NONE, END_STREAM, END_HEADERS, ACK.
-    # PADDED (0x08) and PRIORITY_FLAG (0x20) exist in HTTP2.jl but are
+    # PADDED (0x08) and PRIORITY_FLAG (0x20) exist in PureHTTP2.jl but are
     # not exported as constants by Nghttp2Wrapper at commit a3dbdfb5,
     # so they are not cross-checked in this item.
     @test UInt8(0)                == Nghttp2Wrapper.NGHTTP2_FLAG_NONE
-    @test HTTP2.FrameFlags.END_STREAM  == Nghttp2Wrapper.NGHTTP2_FLAG_END_STREAM
-    @test HTTP2.FrameFlags.END_HEADERS == Nghttp2Wrapper.NGHTTP2_FLAG_END_HEADERS
-    @test HTTP2.FrameFlags.ACK         == Nghttp2Wrapper.NGHTTP2_FLAG_ACK
+    @test PureHTTP2.FrameFlags.END_STREAM  == Nghttp2Wrapper.NGHTTP2_FLAG_END_STREAM
+    @test PureHTTP2.FrameFlags.END_HEADERS == Nghttp2Wrapper.NGHTTP2_FLAG_END_HEADERS
+    @test PureHTTP2.FrameFlags.ACK         == Nghttp2Wrapper.NGHTTP2_FLAG_ACK
 end
 
 @testitem "Interop: settings parameter constants" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.5.2: SETTINGS parameter identifiers.
-    @test HTTP2.SettingsParameter.HEADER_TABLE_SIZE      == Nghttp2Wrapper.NGHTTP2_SETTINGS_HEADER_TABLE_SIZE
-    @test HTTP2.SettingsParameter.ENABLE_PUSH            == Nghttp2Wrapper.NGHTTP2_SETTINGS_ENABLE_PUSH
-    @test HTTP2.SettingsParameter.MAX_CONCURRENT_STREAMS == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS
-    @test HTTP2.SettingsParameter.INITIAL_WINDOW_SIZE    == Nghttp2Wrapper.NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE
-    @test HTTP2.SettingsParameter.MAX_FRAME_SIZE         == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_FRAME_SIZE
-    @test HTTP2.SettingsParameter.MAX_HEADER_LIST_SIZE   == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE
+    @test PureHTTP2.SettingsParameter.HEADER_TABLE_SIZE      == Nghttp2Wrapper.NGHTTP2_SETTINGS_HEADER_TABLE_SIZE
+    @test PureHTTP2.SettingsParameter.ENABLE_PUSH            == Nghttp2Wrapper.NGHTTP2_SETTINGS_ENABLE_PUSH
+    @test PureHTTP2.SettingsParameter.MAX_CONCURRENT_STREAMS == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_CONCURRENT_STREAMS
+    @test PureHTTP2.SettingsParameter.INITIAL_WINDOW_SIZE    == Nghttp2Wrapper.NGHTTP2_SETTINGS_INITIAL_WINDOW_SIZE
+    @test PureHTTP2.SettingsParameter.MAX_FRAME_SIZE         == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_FRAME_SIZE
+    @test PureHTTP2.SettingsParameter.MAX_HEADER_LIST_SIZE   == Nghttp2Wrapper.NGHTTP2_SETTINGS_MAX_HEADER_LIST_SIZE
 end
 
-@testitem "Interop: HPACK encode nghttp2 → decode HTTP2.jl" begin
-    using HTTP2, Nghttp2Wrapper
+@testitem "Interop: HPACK encode nghttp2 → decode PureHTTP2.jl" begin
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 7541: HPACK is not byte-unique, so the cross-test compares
     # decoded header lists, not encoded byte sequences.
@@ -85,9 +85,9 @@ end
             nvs = [NVPair(name, value) for (name, value) in expected_headers]
             wire = deflate(deflater, nvs)
 
-            # Decode with HTTP2.jl's HPACKDecoder
-            decoder = HTTP2.HPACKDecoder()
-            decoded = HTTP2.decode_headers(decoder, wire)
+            # Decode with PureHTTP2.jl's HPACKDecoder
+            decoder = PureHTTP2.HPACKDecoder()
+            decoded = PureHTTP2.decode_headers(decoder, wire)
             @test decoded == expected_headers
         end
     finally
@@ -95,10 +95,10 @@ end
     end
 end
 
-@testitem "Interop: HPACK encode HTTP2.jl → decode nghttp2" begin
-    using HTTP2, Nghttp2Wrapper
+@testitem "Interop: HPACK encode PureHTTP2.jl → decode nghttp2" begin
+    using PureHTTP2, Nghttp2Wrapper
 
-    # Symmetric to the previous item — encode with HTTP2.jl, decode with nghttp2.
+    # Symmetric to the previous item — encode with PureHTTP2.jl, decode with nghttp2.
     # Again comparing semantic (header list) equality.
     test_cases = [
         [(":method", "GET"), (":path", "/"), (":scheme", "http")],
@@ -109,8 +109,8 @@ end
     inflater = HpackInflater()
     try
         for expected_headers in test_cases
-            encoder = HTTP2.HPACKEncoder()
-            wire = HTTP2.encode_headers(encoder, expected_headers)
+            encoder = PureHTTP2.HPACKEncoder()
+            wire = PureHTTP2.encode_headers(encoder, expected_headers)
 
             # Decode with Nghttp2Wrapper's inflater
             nvs = inflate(inflater, wire)
@@ -125,10 +125,10 @@ end
 end
 
 @testitem "Interop: SETTINGS round-trip" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.5: SETTINGS carries (id, value) pairs.
-    # nghttp2 emits a SETTINGS frame; HTTP2.jl parses it.
+    # nghttp2 emits a SETTINGS frame; PureHTTP2.jl parses it.
     cb = Callbacks()
     try
         rv, session_ptr = nghttp2_session_client_new(cb.ptr)
@@ -142,19 +142,19 @@ end
             @test rv2 == 0
             out = Nghttp2Wrapper._session_send_all(session_ptr)
 
-            # Skip the 24-byte client magic, then parse the SETTINGS frame with HTTP2.jl
+            # Skip the 24-byte client magic, then parse the SETTINGS frame with PureHTTP2.jl
             @test length(out) > 24
             frame_bytes = out[25:end]
-            frame, _consumed = HTTP2.decode_frame(frame_bytes)
-            @test frame.header.frame_type == HTTP2.FrameType.SETTINGS
+            frame, _consumed = PureHTTP2.decode_frame(frame_bytes)
+            @test frame.header.frame_type == PureHTTP2.FrameType.SETTINGS
             @test frame.header.stream_id == 0
-            @test !HTTP2.has_flag(frame.header, HTTP2.FrameFlags.ACK)
+            @test !PureHTTP2.has_flag(frame.header, PureHTTP2.FrameFlags.ACK)
 
-            parsed = HTTP2.parse_settings_frame(frame)
+            parsed = PureHTTP2.parse_settings_frame(frame)
             @test length(parsed) == 2
             parsed_dict = Dict(parsed)
-            @test parsed_dict[UInt16(HTTP2.SettingsParameter.MAX_CONCURRENT_STREAMS)] == UInt32(50)
-            @test parsed_dict[UInt16(HTTP2.SettingsParameter.INITIAL_WINDOW_SIZE)] == UInt32(131072)
+            @test parsed_dict[UInt16(PureHTTP2.SettingsParameter.MAX_CONCURRENT_STREAMS)] == UInt32(50)
+            @test parsed_dict[UInt16(PureHTTP2.SettingsParameter.INITIAL_WINDOW_SIZE)] == UInt32(131072)
         finally
             nghttp2_session_del(session_ptr)
         end
@@ -164,10 +164,10 @@ end
 end
 
 @testitem "Interop: PING round-trip" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.7: PING carries 8 opaque bytes and is a connection-level frame.
-    # nghttp2 emits a PING frame; HTTP2.jl parses it.
+    # nghttp2 emits a PING frame; PureHTTP2.jl parses it.
     cb = Callbacks()
     try
         rv, session_ptr = nghttp2_session_client_new(cb.ptr)
@@ -189,8 +189,8 @@ end
             offset = 25
             ping_frame = nothing
             while offset <= length(out)
-                frame, consumed = HTTP2.decode_frame(out[offset:end])
-                if frame.header.frame_type == HTTP2.FrameType.PING
+                frame, consumed = PureHTTP2.decode_frame(out[offset:end])
+                if frame.header.frame_type == PureHTTP2.FrameType.PING
                     ping_frame = frame
                     break
                 end
@@ -200,7 +200,7 @@ end
             @test ping_frame.header.stream_id == 0
             @test ping_frame.header.length == 8
             @test ping_frame.payload == opaque
-            @test !HTTP2.has_flag(ping_frame.header, HTTP2.FrameFlags.ACK)
+            @test !PureHTTP2.has_flag(ping_frame.header, PureHTTP2.FrameFlags.ACK)
         finally
             nghttp2_session_del(session_ptr)
         end
@@ -210,7 +210,7 @@ end
 end
 
 @testitem "Interop: GOAWAY last-stream-id and error codes" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.8: GOAWAY conveys last-stream-id, error code, and
     # optional debug data. A client's GOAWAY cites the last peer
@@ -218,9 +218,9 @@ end
     # codes to exercise the error-code encoding (effectively replacing
     # the dropped "error code constants" standalone item).
     for (last_stream_id, err_code, expected_http2_code) in [
-        (UInt32(0), UInt32(HTTP2.ErrorCode.NO_ERROR),       HTTP2.ErrorCode.NO_ERROR),
-        (UInt32(4), UInt32(HTTP2.ErrorCode.PROTOCOL_ERROR), HTTP2.ErrorCode.PROTOCOL_ERROR),
-        (UInt32(8), UInt32(HTTP2.ErrorCode.CANCEL),         HTTP2.ErrorCode.CANCEL),
+        (UInt32(0), UInt32(PureHTTP2.ErrorCode.NO_ERROR),       PureHTTP2.ErrorCode.NO_ERROR),
+        (UInt32(4), UInt32(PureHTTP2.ErrorCode.PROTOCOL_ERROR), PureHTTP2.ErrorCode.PROTOCOL_ERROR),
+        (UInt32(8), UInt32(PureHTTP2.ErrorCode.CANCEL),         PureHTTP2.ErrorCode.CANCEL),
     ]
         cb = Callbacks()
         try
@@ -239,8 +239,8 @@ end
                 offset = 25
                 goaway_frame = nothing
                 while offset <= length(out)
-                    frame, consumed = HTTP2.decode_frame(out[offset:end])
-                    if frame.header.frame_type == HTTP2.FrameType.GOAWAY
+                    frame, consumed = PureHTTP2.decode_frame(out[offset:end])
+                    if frame.header.frame_type == PureHTTP2.FrameType.GOAWAY
                         goaway_frame = frame
                         break
                     end
@@ -249,7 +249,7 @@ end
                 @test goaway_frame !== nothing
                 @test goaway_frame.header.stream_id == 0
 
-                parsed_last, parsed_err, _debug = HTTP2.parse_goaway_frame(goaway_frame)
+                parsed_last, parsed_err, _debug = PureHTTP2.parse_goaway_frame(goaway_frame)
                 @test parsed_last == last_stream_id
                 @test parsed_err == expected_http2_code
             finally
@@ -262,53 +262,53 @@ end
 end
 
 @testitem "Interop: DATA frame END_STREAM" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.1: DATA frames carry stream payload, with optional
-    # END_STREAM flag. HTTP2.jl encodes a DATA frame; feed the bytes
+    # END_STREAM flag. PureHTTP2.jl encodes a DATA frame; feed the bytes
     # to an nghttp2 server session and assert the parser accepts them
     # (return value ≥ 0 = bytes consumed).
     # Note: a proper server session requires the preface + SETTINGS
     # exchange before any DATA frame will be accepted on a stream;
     # exercising that full handshake in a single @testitem is
     # out of scope at M4. The DATA cross-test here is a frame-encoding
-    # RFC compliance check with HTTP2.jl self-decoding for verification.
+    # RFC compliance check with PureHTTP2.jl self-decoding for verification.
     stream_id = UInt32(1)
     payload = collect(UInt8, 1:50)
 
     # Without END_STREAM
-    frame1 = HTTP2.data_frame(stream_id, payload; end_stream=false)
-    @test frame1.header.frame_type == HTTP2.FrameType.DATA
+    frame1 = PureHTTP2.data_frame(stream_id, payload; end_stream=false)
+    @test frame1.header.frame_type == PureHTTP2.FrameType.DATA
     @test frame1.header.stream_id == stream_id
     @test frame1.header.length == length(payload)
-    @test !HTTP2.has_flag(frame1.header, HTTP2.FrameFlags.END_STREAM)
+    @test !PureHTTP2.has_flag(frame1.header, PureHTTP2.FrameFlags.END_STREAM)
 
-    bytes1 = HTTP2.encode_frame(frame1)
-    decoded1, _ = HTTP2.decode_frame(bytes1)
-    @test decoded1.header.frame_type == HTTP2.FrameType.DATA
+    bytes1 = PureHTTP2.encode_frame(frame1)
+    decoded1, _ = PureHTTP2.decode_frame(bytes1)
+    @test decoded1.header.frame_type == PureHTTP2.FrameType.DATA
     @test decoded1.payload == payload
 
     # With END_STREAM
-    frame2 = HTTP2.data_frame(stream_id, payload; end_stream=true)
-    @test HTTP2.has_flag(frame2.header, HTTP2.FrameFlags.END_STREAM)
-    bytes2 = HTTP2.encode_frame(frame2)
-    decoded2, _ = HTTP2.decode_frame(bytes2)
-    @test decoded2.header.flags == HTTP2.FrameFlags.END_STREAM
+    frame2 = PureHTTP2.data_frame(stream_id, payload; end_stream=true)
+    @test PureHTTP2.has_flag(frame2.header, PureHTTP2.FrameFlags.END_STREAM)
+    bytes2 = PureHTTP2.encode_frame(frame2)
+    decoded2, _ = PureHTTP2.decode_frame(bytes2)
+    @test decoded2.header.flags == PureHTTP2.FrameFlags.END_STREAM
 
-    # PADDED sub-case: verify HTTP2.jl's data_frame(padded=true) emits
+    # PADDED sub-case: verify PureHTTP2.jl's data_frame(padded=true) emits
     # the RFC 9113 §6.1 wire layout: PAD_LENGTH byte + payload + pad bytes.
-    frame3 = HTTP2.data_frame(stream_id, payload; padded=true)
-    @test HTTP2.has_flag(frame3.header, HTTP2.FrameFlags.PADDED)
-    bytes3 = HTTP2.encode_frame(frame3)
+    frame3 = PureHTTP2.data_frame(stream_id, payload; padded=true)
+    @test PureHTTP2.has_flag(frame3.header, PureHTTP2.FrameFlags.PADDED)
+    bytes3 = PureHTTP2.encode_frame(frame3)
     # Byte 10 is the first payload byte (PAD_LENGTH per RFC 9113 §6.1).
     @test bytes3[10] > 0
 end
 
 @testitem "Interop: WINDOW_UPDATE handshake" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.9: WINDOW_UPDATE carries a 31-bit increment.
-    # nghttp2 emits a WINDOW_UPDATE; HTTP2.jl parses it.
+    # nghttp2 emits a WINDOW_UPDATE; PureHTTP2.jl parses it.
     cb = Callbacks()
     try
         rv, session_ptr = nghttp2_session_client_new(cb.ptr)
@@ -324,8 +324,8 @@ end
             offset = 25
             window_frame = nothing
             while offset <= length(out)
-                frame, consumed = HTTP2.decode_frame(out[offset:end])
-                if frame.header.frame_type == HTTP2.FrameType.WINDOW_UPDATE
+                frame, consumed = PureHTTP2.decode_frame(out[offset:end])
+                if frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE
                     window_frame = frame
                     break
                 end
@@ -335,7 +335,7 @@ end
             @test window_frame.header.stream_id == 0
             @test window_frame.header.length == 4
 
-            increment = HTTP2.parse_window_update_frame(window_frame)
+            increment = PureHTTP2.parse_window_update_frame(window_frame)
             @test increment == 32768
         finally
             nghttp2_session_del(session_ptr)
@@ -344,20 +344,20 @@ end
         close(cb)
     end
 
-    # Reverse direction: HTTP2.jl encodes, byte-level check against RFC 9113 §6.9
+    # Reverse direction: PureHTTP2.jl encodes, byte-level check against RFC 9113 §6.9
     # (the wire format is simple enough that self-decoding IS the parity check).
-    frame = HTTP2.window_update_frame(UInt32(5), 65535)
-    @test frame.header.frame_type == HTTP2.FrameType.WINDOW_UPDATE
+    frame = PureHTTP2.window_update_frame(UInt32(5), 65535)
+    @test frame.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE
     @test frame.header.stream_id == 5
     @test frame.header.length == 4
-    @test HTTP2.parse_window_update_frame(frame) == 65535
+    @test PureHTTP2.parse_window_update_frame(frame) == 65535
 end
 
 @testitem "Interop: RST_STREAM error code propagation" begin
-    using HTTP2, Nghttp2Wrapper
+    using PureHTTP2, Nghttp2Wrapper
 
     # RFC 9113 §6.4: RST_STREAM carries a 32-bit error code.
-    # nghttp2 emits a RST_STREAM; HTTP2.jl parses it.
+    # nghttp2 emits a RST_STREAM; PureHTTP2.jl parses it.
     cb = Callbacks()
     try
         rv, session_ptr = nghttp2_session_client_new(cb.ptr)
@@ -367,7 +367,7 @@ end
             # nghttp2 requires a valid stream id; submit RST_STREAM on stream 1
             # (which nghttp2 will reject with an error since no stream 1 is open,
             # but the frame bytes are not produced either then). Use stream 0 is
-            # illegal for RST_STREAM. Instead, exercise the HTTP2.jl encoder
+            # illegal for RST_STREAM. Instead, exercise the PureHTTP2.jl encoder
             # directly — the frame format is byte-level checkable against the
             # RFC.
         finally
@@ -377,12 +377,12 @@ end
         close(cb)
     end
 
-    # HTTP2.jl → RST_STREAM wire format check (RFC 9113 §6.4):
+    # PureHTTP2.jl → RST_STREAM wire format check (RFC 9113 §6.4):
     # Frame type 0x03, length 4, payload = big-endian error code.
-    for err_code in [HTTP2.ErrorCode.CANCEL, HTTP2.ErrorCode.INTERNAL_ERROR,
-                     HTTP2.ErrorCode.PROTOCOL_ERROR, HTTP2.ErrorCode.STREAM_CLOSED]
-        frame = HTTP2.rst_stream_frame(UInt32(1), err_code)
-        @test frame.header.frame_type == HTTP2.FrameType.RST_STREAM
+    for err_code in [PureHTTP2.ErrorCode.CANCEL, PureHTTP2.ErrorCode.INTERNAL_ERROR,
+                     PureHTTP2.ErrorCode.PROTOCOL_ERROR, PureHTTP2.ErrorCode.STREAM_CLOSED]
+        frame = PureHTTP2.rst_stream_frame(UInt32(1), err_code)
+        @test frame.header.frame_type == PureHTTP2.FrameType.RST_STREAM
         @test frame.header.stream_id == 1
         @test frame.header.length == 4
 
@@ -393,9 +393,9 @@ end
 end
 
 @testitem "Interop: h2c live TCP handshake" begin
-    using HTTP2, Nghttp2Wrapper, Sockets
+    using PureHTTP2, Nghttp2Wrapper, Sockets
 
-    # Milestone 5 — first live cross-test of HTTP2.serve_connection!
+    # Milestone 5 — first live cross-test of PureHTTP2.serve_connection!
     # over a real Sockets.TCPSocket against a Nghttp2Wrapper client.
     # Exercises: preface exchange, server SETTINGS, SETTINGS ACK,
     # PING round-trip, graceful GOAWAY. h2c (cleartext) per RFC 9113 §3.
@@ -403,12 +403,12 @@ end
     port = getsockname(server_listen)[2]
 
     server_err = Ref{Any}(nothing)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     server_task = @async try
         sock = accept(server_listen)
         try
-            HTTP2.serve_connection!(conn, sock)
+            PureHTTP2.serve_connection!(conn, sock)
         finally
             close(sock)
         end
@@ -468,10 +468,10 @@ end
                 # batched its writes).
                 saw_ping_ack = false
                 cursor = Ref(1)
-                while cursor[] <= length(buf2) - HTTP2.FRAME_HEADER_SIZE + 1
-                    f, consumed = HTTP2.decode_frame(@view buf2[cursor[]:end])
-                    if f.header.frame_type == HTTP2.FrameType.PING &&
-                       HTTP2.has_flag(f.header, HTTP2.FrameFlags.ACK)
+                while cursor[] <= length(buf2) - PureHTTP2.FRAME_HEADER_SIZE + 1
+                    f, consumed = PureHTTP2.decode_frame(@view buf2[cursor[]:end])
+                    if f.header.frame_type == PureHTTP2.FrameType.PING &&
+                       PureHTTP2.has_flag(f.header, PureHTTP2.FrameFlags.ACK)
                         saw_ping_ack = true
                     end
                     cursor[] += consumed
@@ -501,44 +501,44 @@ end
 
     @test server_err[] === nothing
     @test conn.state in
-          (HTTP2.ConnectionState.CLOSING, HTTP2.ConnectionState.CLOSED)
+          (PureHTTP2.ConnectionState.CLOSING, PureHTTP2.ConnectionState.CLOSED)
     @test conn.goaway_received == true
 end
 
 @testitem "Interop: ALPN helper with OpenSSL extension" begin
-    using HTTP2, OpenSSL
+    using PureHTTP2, OpenSSL
 
-    # Milestone 5 — verify the HTTP2OpenSSLExt package extension
+    # Milestone 5 — verify the PureHTTP2OpenSSLExt package extension
     # loads automatically when OpenSSL.jl is in the environment, and
-    # that HTTP2.set_alpn_h2! gains a method for OpenSSL.SSLContext.
+    # that PureHTTP2.set_alpn_h2! gains a method for OpenSSL.SSLContext.
     #
     # Server-side h2 TLS is out of scope at M5 (OpenSSL.jl does not
     # yet bind SSL_CTX_set_alpn_select_cb — see upstream-bugs.md).
     # This item guards the forward-compatible client-side helper.
-    @test hasmethod(HTTP2.set_alpn_h2!, (OpenSSL.SSLContext,))
-    @test hasmethod(HTTP2.set_alpn_h2!, (OpenSSL.SSLContext, Vector{String}))
+    @test hasmethod(PureHTTP2.set_alpn_h2!, (OpenSSL.SSLContext,))
+    @test hasmethod(PureHTTP2.set_alpn_h2!, (OpenSSL.SSLContext, Vector{String}))
 
     # Construct a client-side SSL context and call the helper.
     ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
-    returned = HTTP2.set_alpn_h2!(ctx)
+    returned = PureHTTP2.set_alpn_h2!(ctx)
     @test returned === ctx
 
     # Explicit protocol list also works and returns the same ctx.
-    returned2 = HTTP2.set_alpn_h2!(ctx, ["h2", "http/1.1"])
+    returned2 = PureHTTP2.set_alpn_h2!(ctx, ["h2", "http/1.1"])
     @test returned2 === ctx
 
     # Validation: protocol names >255 bytes rejected.
     long_name = repeat("a", 256)
-    @test_throws ArgumentError HTTP2.set_alpn_h2!(ctx, [long_name])
+    @test_throws ArgumentError PureHTTP2.set_alpn_h2!(ctx, [long_name])
 end
 
 @testitem "Interop: h2c live TCP client" begin
-    using HTTP2, Nghttp2Wrapper, Sockets
+    using PureHTTP2, Nghttp2Wrapper, Sockets
 
-    # Milestone 6 — first live cross-test of HTTP2.open_connection!
+    # Milestone 6 — first live cross-test of PureHTTP2.open_connection!
     # over a real Sockets.TCPSocket against a Nghttp2Wrapper.jl
     # HTTP2Server. This is the symmetric complement of M5's
-    # "Interop: h2c live TCP handshake" item (HTTP2.jl as server vs
+    # "Interop: h2c live TCP handshake" item (PureHTTP2.jl as server vs
     # Nghttp2Wrapper as client). It operationally fulfills
     # constitution Principle III for the client role.
     server = Nghttp2Wrapper.HTTP2Server(0; host="127.0.0.1") do _req
@@ -554,8 +554,8 @@ end
 
         tcp = connect(IPv4(0x7f000001), port)
         try
-            conn = HTTP2.HTTP2Connection()
-            result = HTTP2.open_connection!(conn, tcp;
+            conn = PureHTTP2.HTTP2Connection()
+            result = PureHTTP2.open_connection!(conn, tcp;
                 request_headers = Tuple{String, String}[
                     (":method", "GET"),
                     (":path", "/"),
@@ -584,11 +584,11 @@ end
 end
 
 @testitem "Interop: set_alpn_h2! live TLS handshake (Reseau server)" begin
-    using HTTP2, Reseau, OpenSSL, Sockets
+    using PureHTTP2, Reseau, OpenSSL, Sockets
 
     # Milestone 7.5 — repoint the M6 item at a Reseau server and
     # flip @test_broken to a real @test. The client side still
-    # uses HTTP2.set_alpn_h2! on an OpenSSL.SSLContext; what
+    # uses PureHTTP2.set_alpn_h2! on an OpenSSL.SSLContext; what
     # changed is the server: previously Nghttp2Wrapper.HTTP2Server
     # (which uses OpenSSL.ssl_set_alpn for ALPN — a client-side
     # API that is a no-op on a server context, leaving ALPN
@@ -597,7 +597,7 @@ end
     # `Reseau/src/5_tls.jl:725-732` — the exact upstream binding
     # missing from OpenSSL.jl).
     #
-    # This test proves that HTTP2.set_alpn_h2! successfully
+    # This test proves that PureHTTP2.set_alpn_h2! successfully
     # installed the RFC 7301 §3.1 wire format on a client
     # SSLContext, performed a real TLS handshake to a live
     # server that actually runs ALPN selection, and the
@@ -618,7 +618,7 @@ end
     # Reseau actually performs server-side ALPN selection (the
     # binding OpenSSL.jl is missing), so the handshake will
     # return "h2" to the client.
-    server_cfg = HTTP2.reseau_h2_server_config(;
+    server_cfg = PureHTTP2.reseau_h2_server_config(;
         cert_file   = cert_path,
         key_file    = key_path,
         verify_peer = false,
@@ -636,10 +636,10 @@ end
 
     try
         # Client-side: configure ALPN to advertise h2 via
-        # HTTP2OpenSSLExt, then connect over TLS — unchanged
+        # PureHTTP2OpenSSLExt, then connect over TLS — unchanged
         # from M6.
         ctx = OpenSSL.SSLContext(OpenSSL.TLSClientMethod())
-        returned = HTTP2.set_alpn_h2!(ctx)
+        returned = PureHTTP2.set_alpn_h2!(ctx)
         @test returned === ctx
 
         tcp = connect(IPv4(0x7f000001), port)
@@ -686,9 +686,9 @@ end
 end
 
 @testitem "Interop: h2 live TLS handshake (server-role via Reseau)" begin
-    using HTTP2, Reseau
+    using PureHTTP2, Reseau
 
-    # Milestone 7.5 — first live cross-test of HTTP2.jl's server
+    # Milestone 7.5 — first live cross-test of PureHTTP2.jl's server
     # role over a real TLS handshake. Reseau.jl binds
     # SSL_CTX_set_alpn_select_cb, which is the upstream gap in
     # OpenSSL.jl that previously blocked server-side h2. This
@@ -705,11 +705,11 @@ end
         return
     end
 
-    # Server side: use HTTP2.reseau_h2_server_config to build a
+    # Server side: use PureHTTP2.reseau_h2_server_config to build a
     # Config with ALPN h2 pre-populated. Disable peer verification
     # (we're using a self-signed fixture cert). Both sides share
     # the fixture; Reseau accepts client certs optionally.
-    server_cfg = HTTP2.reseau_h2_server_config(;
+    server_cfg = PureHTTP2.reseau_h2_server_config(;
         cert_file   = cert_path,
         key_file    = key_path,
         verify_peer = false,
@@ -721,8 +721,8 @@ end
     @test laddr.port > 0
 
     # Spawn server-accept task. The task returns the TLS.Conn after
-    # handshake completes; it does NOT call HTTP2.serve_connection!
-    # — the test's scope is to prove that HTTP2.jl's server-role
+    # handshake completes; it does NOT call PureHTTP2.serve_connection!
+    # — the test's scope is to prove that PureHTTP2.jl's server-role
     # IO entry point can accept a TLS.Conn whose ALPN is "h2". Full
     # HTTP/2 exchange is covered by M6's h2c items.
     server_task = Threads.@spawn begin
@@ -736,14 +736,14 @@ end
     # helper builds a Config object, but Reseau.TLS.connect's
     # multi-arg form does not accept a Config — it takes TLS
     # kwargs inline and builds a Config internally. We exercise
-    # the HTTP2.jl helper's default-list behavior via a separate
+    # the PureHTTP2.jl helper's default-list behavior via a separate
     # assertion below; for the actual connect, we pass
-    # alpn_protocols=HTTP2.ALPN_H2_PROTOCOLS directly.
-    sample_cfg = HTTP2.reseau_h2_client_config()
+    # alpn_protocols=PureHTTP2.ALPN_H2_PROTOCOLS directly.
+    sample_cfg = PureHTTP2.reseau_h2_client_config()
     @test sample_cfg.alpn_protocols == ["h2"]
 
     client_conn = Reseau.TLS.connect("tcp", "127.0.0.1:$(laddr.port)";
-        alpn_protocols = HTTP2.ALPN_H2_PROTOCOLS,
+        alpn_protocols = PureHTTP2.ALPN_H2_PROTOCOLS,
         verify_peer = false,
         server_name = "localhost",
     )
@@ -754,7 +754,7 @@ end
 
         try
             # Both sides must observe h2 as the negotiated ALPN
-            # protocol. This is the first HTTP2.jl test that
+            # protocol. This is the first PureHTTP2.jl test that
             # flips from @test_broken to @test for server-side
             # ALPN selection — Reseau's binding of
             # SSL_CTX_set_alpn_select_cb makes this work.
@@ -764,7 +764,7 @@ end
             @test client_alpn == "h2"
             @test server_alpn == "h2"
 
-            # Sanity check: HTTP2.jl's serve_connection! would
+            # Sanity check: PureHTTP2.jl's serve_connection! would
             # accept the TLS.Conn as a valid Base.IO transport.
             # We don't drive a full HTTP/2 exchange here (the
             # tests from US1 in `Interop: h2c live TCP client`
@@ -793,9 +793,9 @@ end
 end
 
 @testitem "Interop: ALPN helper with Reseau extension" begin
-    using HTTP2, Reseau
+    using PureHTTP2, Reseau
 
-    # Milestone 7.5 — guard the HTTP2ReseauExt package extension
+    # Milestone 7.5 — guard the PureHTTP2ReseauExt package extension
     # auto-load flow. Mirrors the M5
     # `Interop: ALPN helper with OpenSSL extension` item but for
     # the new Reseau-backed helpers. Verifies: (a) the three
@@ -805,25 +805,25 @@ end
     # behavior works, (d) explicit overrides are honored,
     # (e) the server config helper enforces its required
     # cert_file / key_file kwargs.
-    @test length(methods(HTTP2.reseau_h2_server_config)) == 1
-    @test length(methods(HTTP2.reseau_h2_client_config)) == 1
-    @test length(methods(HTTP2.reseau_h2_connect)) == 1
+    @test length(methods(PureHTTP2.reseau_h2_server_config)) == 1
+    @test length(methods(PureHTTP2.reseau_h2_client_config)) == 1
+    @test length(methods(PureHTTP2.reseau_h2_connect)) == 1
 
-    ext = Base.get_extension(HTTP2, :HTTP2ReseauExt)
+    ext = Base.get_extension(PureHTTP2, :PureHTTP2ReseauExt)
     @test ext !== nothing
 
     # Default ALPN list: should be ["h2"] on both config helpers.
-    client_cfg = HTTP2.reseau_h2_client_config()
+    client_cfg = PureHTTP2.reseau_h2_client_config()
     @test client_cfg.alpn_protocols == ["h2"]
-    @test client_cfg.alpn_protocols == HTTP2.ALPN_H2_PROTOCOLS
+    @test client_cfg.alpn_protocols == PureHTTP2.ALPN_H2_PROTOCOLS
 
     # Explicit override is honored.
-    client_cfg_override = HTTP2.reseau_h2_client_config(;
+    client_cfg_override = PureHTTP2.reseau_h2_client_config(;
         alpn_protocols = ["h2", "http/1.1"])
     @test client_cfg_override.alpn_protocols == ["h2", "http/1.1"]
 
     # Server config helper requires cert_file and key_file.
-    @test_throws UndefKeywordError HTTP2.reseau_h2_server_config()
+    @test_throws UndefKeywordError PureHTTP2.reseau_h2_server_config()
 
     # When server config helper is called with both cert_file
     # and key_file, it returns a Config with default ALPN.
@@ -831,7 +831,7 @@ end
     cert_path = joinpath(@__DIR__, "..", "fixtures", "selfsigned.crt")
     key_path  = joinpath(@__DIR__, "..", "fixtures", "selfsigned.key")
     if isfile(cert_path) && isfile(key_path)
-        server_cfg = HTTP2.reseau_h2_server_config(;
+        server_cfg = PureHTTP2.reseau_h2_server_config(;
             cert_file = cert_path,
             key_file  = key_path,
         )
@@ -840,7 +840,7 @@ end
         @test server_cfg.key_file == key_path
     end
 
-    # The ALPN_H2_PROTOCOLS constant is exported from HTTP2.
-    @test :ALPN_H2_PROTOCOLS in names(HTTP2)
-    @test HTTP2.ALPN_H2_PROTOCOLS == ["h2"]
+    # The ALPN_H2_PROTOCOLS constant is exported from PureHTTP2.
+    @test :ALPN_H2_PROTOCOLS in names(PureHTTP2)
+    @test PureHTTP2.ALPN_H2_PROTOCOLS == ["h2"]
 end

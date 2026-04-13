@@ -1,4 +1,4 @@
-# HTTP/2 connection management for HTTP2.jl
+# HTTP/2 connection management for PureHTTP2.jl
 # Per RFC 7540: Hypertext Transfer Protocol Version 2 (HTTP/2)
 
 # Note: frames.jl, hpack.jl, stream.jl, and flow_control.jl must be included before this file
@@ -160,7 +160,7 @@ Client-role connection setup is scheduled for Milestone 6.
 # Example
 
 ```jldoctest
-julia> using HTTP2
+julia> using PureHTTP2
 
 julia> conn = HTTP2Connection();
 

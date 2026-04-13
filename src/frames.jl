@@ -1,4 +1,4 @@
-# HTTP/2 frame types and encoding/decoding for HTTP2.jl
+# HTTP/2 frame types and encoding/decoding for PureHTTP2.jl
 # Per RFC 7540: Hypertext Transfer Protocol Version 2 (HTTP/2)
 
 """
@@ -252,7 +252,7 @@ from the supplied fields and attaches the payload.
 # Example
 
 ```jldoctest
-julia> using HTTP2
+julia> using PureHTTP2
 
 julia> frame = ping_frame(UInt8[1, 2, 3, 4, 5, 6, 7, 8]);
 

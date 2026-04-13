@@ -1,6 +1,6 @@
-# HTTP2.jl
+# PureHTTP2.jl
 
-HTTP2.jl is a pure-Julia implementation of the HTTP/2 protocol
+PureHTTP2.jl is a pure-Julia implementation of the HTTP/2 protocol
 (RFC 9113) and HPACK header compression (RFC 7541), extracted from
 the `http2` submodule of
 [gRPCServer.jl](https://github.com/s-celles/gRPCServer.jl) and
@@ -11,7 +11,7 @@ a thin wrapper over the `libnghttp2` reference implementation.
 
 ## Project principles
 
-HTTP2.jl follows a [constitution](https://github.com/s-celles/HTTP2.jl/blob/main/.specify/memory/constitution.md)
+PureHTTP2.jl follows a [constitution](https://github.com/s-celles/PureHTTP2.jl/blob/main/.specify/memory/constitution.md)
 with five non-negotiable principles:
 
 1. **Pure Julia Implementation** — zero `ccall` into C libraries for
@@ -27,11 +27,11 @@ with five non-negotiable principles:
 
 ## Status
 
-HTTP2.jl is pre-`0.1.0` development software. The current version is
+PureHTTP2.jl is pre-`0.1.0` development software. The current version is
 `0.0.1` (Milestone 1 scaffolding). See
-[ROADMAP.md](https://github.com/s-celles/HTTP2.jl/blob/main/ROADMAP.md)
+[ROADMAP.md](https://github.com/s-celles/PureHTTP2.jl/blob/main/ROADMAP.md)
 for the planned milestones and
-[CHANGELOG.md](https://github.com/s-celles/HTTP2.jl/blob/main/CHANGELOG.md)
+[CHANGELOG.md](https://github.com/s-celles/PureHTTP2.jl/blob/main/CHANGELOG.md)
 for the entries landed so far.
 
 ## Reference

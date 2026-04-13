@@ -311,7 +311,7 @@ end
 Drive a client-role HTTP/2 connection over an arbitrary `Base.IO`
 transport and perform one request/response exchange.
 
-This is HTTP2.jl's primary client-side entry point. It is the
+This is PureHTTP2.jl's primary client-side entry point. It is the
 symmetric counterpart to [`serve_connection!`](@ref) and reuses the
 same IO adapter contract (`read(io, n::Int)`, `write(io, bytes)`,
 `close(io)`).
@@ -384,11 +384,11 @@ A `NamedTuple{(:status, :headers, :body), Tuple{Int, Vector{Tuple{String, String
 # Example
 
 ```julia
-using HTTP2, Sockets
+using PureHTTP2, Sockets
 
 tcp = connect(Sockets.IPv4("127.0.0.1"), 8080)
 conn = HTTP2Connection()
-result = HTTP2.open_connection!(conn, tcp;
+result = PureHTTP2.open_connection!(conn, tcp;
     request_headers = [
         (":method", "GET"),
         (":path", "/"),

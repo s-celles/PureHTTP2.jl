@@ -1,4 +1,4 @@
-# HTTP/2 flow control for HTTP2.jl
+# HTTP/2 flow control for PureHTTP2.jl
 # Per RFC 7540 Section 5.2: Flow Control
 
 # Note: frames.jl must be included before this file
@@ -19,7 +19,7 @@ safe via an internal `ReentrantLock`.
 # Example
 
 ```jldoctest
-julia> using HTTP2
+julia> using PureHTTP2
 
 julia> window = FlowControlWindow(65535);
 

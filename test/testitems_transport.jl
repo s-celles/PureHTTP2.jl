@@ -1,16 +1,16 @@
 # Milestone 5: Transport layer @testitems.
 #
-# These items exercise `HTTP2.serve_connection!` over in-memory
+# These items exercise `PureHTTP2.serve_connection!` over in-memory
 # `Base.IO` transports that satisfy the IO adapter contract documented
 # in `specs/006-tls-alpn-support/contracts/README.md`.
 #
 # They also guard the optional OpenSSL.jl extension pattern: in the
-# main env (no OpenSSL), `HTTP2.set_alpn_h2!` MUST exist as a generic
+# main env (no OpenSSL), `PureHTTP2.set_alpn_h2!` MUST exist as a generic
 # function with zero methods. The live-method cross-test lives in the
 # interop env (`test/interop/testitems_interop.jl`).
 
 @testitem "Transport: serve_connection! with IOBuffer" begin
-    using HTTP2
+    using PureHTTP2
 
     # Minimal `IO` wrapper so the server reads from one buffer and
     # writes to another (Base.IOBuffer has a single position cursor
@@ -29,24 +29,24 @@
     # Build the client byte stream: preface + SETTINGS + SETTINGS ACK
     # + PING + GOAWAY(NO_ERROR).
     client_bytes = IOBuffer()
-    write(client_bytes, HTTP2.CONNECTION_PREFACE)
-    write(client_bytes, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(client_bytes, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    write(client_bytes, HTTP2.encode_frame(HTTP2.ping_frame(UInt8[1,2,3,4,5,6,7,8])))
-    write(client_bytes, HTTP2.encode_frame(HTTP2.goaway_frame(0, HTTP2.ErrorCode.NO_ERROR)))
+    write(client_bytes, PureHTTP2.CONNECTION_PREFACE)
+    write(client_bytes, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(client_bytes, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    write(client_bytes, PureHTTP2.encode_frame(PureHTTP2.ping_frame(UInt8[1,2,3,4,5,6,7,8])))
+    write(client_bytes, PureHTTP2.encode_frame(PureHTTP2.goaway_frame(0, PureHTTP2.ErrorCode.NO_ERROR)))
 
     input_buf = IOBuffer(take!(client_bytes))
     output_buf = IOBuffer()
     io = SplitIO(input_buf, output_buf)
 
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     # No exception expected; transport EOF ends the loop cleanly
     # after the GOAWAY puts the connection into CLOSING state.
-    HTTP2.serve_connection!(conn, io)
+    PureHTTP2.serve_connection!(conn, io)
 
     @test conn.state in
-          (HTTP2.ConnectionState.CLOSING, HTTP2.ConnectionState.CLOSED)
+          (PureHTTP2.ConnectionState.CLOSING, PureHTTP2.ConnectionState.CLOSED)
 
     # Inspect the server's response bytes: should contain at least a
     # server preface SETTINGS frame, a SETTINGS ACK (in response to
@@ -54,30 +54,30 @@
     response_bytes = take!(output_buf)
     @test length(response_bytes) > 0
 
-    decoded = HTTP2.Frame[]
+    decoded = PureHTTP2.Frame[]
     pos = Ref(1)
-    while pos[] <= length(response_bytes) - HTTP2.FRAME_HEADER_SIZE + 1
-        frame, consumed = HTTP2.decode_frame(@view response_bytes[pos[]:end])
+    while pos[] <= length(response_bytes) - PureHTTP2.FRAME_HEADER_SIZE + 1
+        frame, consumed = PureHTTP2.decode_frame(@view response_bytes[pos[]:end])
         push!(decoded, frame)
         pos[] += consumed
     end
 
     frame_types = [f.header.frame_type for f in decoded]
-    @test HTTP2.FrameType.SETTINGS in frame_types
+    @test PureHTTP2.FrameType.SETTINGS in frame_types
 
     settings_acks = count(f ->
-        f.header.frame_type == HTTP2.FrameType.SETTINGS &&
-        HTTP2.has_flag(f.header, HTTP2.FrameFlags.ACK), decoded)
+        f.header.frame_type == PureHTTP2.FrameType.SETTINGS &&
+        PureHTTP2.has_flag(f.header, PureHTTP2.FrameFlags.ACK), decoded)
     @test settings_acks >= 1
 
     ping_acks = count(f ->
-        f.header.frame_type == HTTP2.FrameType.PING &&
-        HTTP2.has_flag(f.header, HTTP2.FrameFlags.ACK), decoded)
+        f.header.frame_type == PureHTTP2.FrameType.PING &&
+        PureHTTP2.has_flag(f.header, PureHTTP2.FrameFlags.ACK), decoded)
     @test ping_acks == 1
 end
 
 @testitem "Transport: serve_connection! with Pipe" begin
-    using HTTP2
+    using PureHTTP2
 
     # Use paired Base.BufferStream instances as a Pipe-like
     # bidirectional transport. BufferStream blocks on read until data
@@ -97,11 +97,11 @@ end
     server_to_client = Base.BufferStream()
 
     server_io = PairedIO(client_to_server, server_to_client)
-    conn = HTTP2.HTTP2Connection()
+    conn = PureHTTP2.HTTP2Connection()
 
     server_err = Ref{Any}(nothing)
     server_task = @async try
-        HTTP2.serve_connection!(conn, server_io)
+        PureHTTP2.serve_connection!(conn, server_io)
     catch err
         server_err[] = err
         rethrow(err)
@@ -110,11 +110,11 @@ end
     # Client side: write preface + SETTINGS + SETTINGS ACK + PING +
     # GOAWAY, then close the write side so serve_connection! sees EOF
     # and exits.
-    write(client_to_server, HTTP2.CONNECTION_PREFACE)
-    write(client_to_server, HTTP2.encode_frame(HTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
-    write(client_to_server, HTTP2.encode_frame(HTTP2.settings_frame(; ack=true)))
-    write(client_to_server, HTTP2.encode_frame(HTTP2.ping_frame(UInt8[9,8,7,6,5,4,3,2])))
-    write(client_to_server, HTTP2.encode_frame(HTTP2.goaway_frame(0, HTTP2.ErrorCode.NO_ERROR)))
+    write(client_to_server, PureHTTP2.CONNECTION_PREFACE)
+    write(client_to_server, PureHTTP2.encode_frame(PureHTTP2.settings_frame(Tuple{UInt16, UInt32}[])))
+    write(client_to_server, PureHTTP2.encode_frame(PureHTTP2.settings_frame(; ack=true)))
+    write(client_to_server, PureHTTP2.encode_frame(PureHTTP2.ping_frame(UInt8[9,8,7,6,5,4,3,2])))
+    write(client_to_server, PureHTTP2.encode_frame(PureHTTP2.goaway_frame(0, PureHTTP2.ErrorCode.NO_ERROR)))
     close(client_to_server)
 
     # Wait for the server to finish. Should complete promptly on EOF.
@@ -122,23 +122,23 @@ end
 
     @test server_err[] === nothing
     @test conn.state in
-          (HTTP2.ConnectionState.CLOSING, HTTP2.ConnectionState.CLOSED)
+          (PureHTTP2.ConnectionState.CLOSING, PureHTTP2.ConnectionState.CLOSED)
 
     # Server should have written at least the preface SETTINGS and a
     # PING ACK. Drain server_to_client.
     close(server_to_client)
     response_bytes = read(server_to_client)
-    @test length(response_bytes) >= HTTP2.FRAME_HEADER_SIZE
+    @test length(response_bytes) >= PureHTTP2.FRAME_HEADER_SIZE
 end
 
 @testitem "Transport: ALPN helper stub (no extension)" begin
-    using HTTP2
+    using PureHTTP2
 
     # In the main env, OpenSSL.jl is NOT loaded, so the extension
     # does not load. The generic function must exist with zero
     # methods, and any call must throw MethodError.
-    @test isempty(methods(HTTP2.set_alpn_h2!))
-    @test :set_alpn_h2! in names(HTTP2)
-    @test_throws MethodError HTTP2.set_alpn_h2!("dummy")
-    @test_throws MethodError HTTP2.set_alpn_h2!(nothing, ["h2"])
+    @test isempty(methods(PureHTTP2.set_alpn_h2!))
+    @test :set_alpn_h2! in names(PureHTTP2)
+    @test_throws MethodError PureHTTP2.set_alpn_h2!("dummy")
+    @test_throws MethodError PureHTTP2.set_alpn_h2!(nothing, ["h2"])
 end
