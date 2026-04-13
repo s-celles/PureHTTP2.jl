@@ -13,7 +13,7 @@ Each milestone respects the
 `TestItemRunner.jl`, SemVer + Keep a Changelog, warning-free Documenter
 builds, and RFC-grounded cross-tests against Nghttp2Wrapper.jl.
 
-## Status snapshot (2026-04-12)
+## Status snapshot (2026-04-13)
 
 | Milestone | Version         | Status         | Commit    | Tests (main / interop) |
 | --------- | --------------- | -------------- | --------- | ---------------------- |
@@ -24,19 +24,24 @@ builds, and RFC-grounded cross-tests against Nghttp2Wrapper.jl.
 | M4        | `0.2.0 → 0.3.0` | ✅ Completed   | `a5df743` | 24,767 / 24,872        |
 | M5        | `0.3.0 → 0.4.0` | ✅ Completed   | `c874bce` | 24,779 / 24,900        |
 | M6        | `0.4.0 → 0.5.0` | ✅ Completed   | `e9070d5` | 24,809 / 24,937 +1 broken |
-| M7        | `0.5.0 → 0.1.0` + `v0.1.0` tag | ✅ Completed | *TBD on main merge* | 24,809 / 24,937 +1 broken |
-| M8        | → next tag      | Not started    |           |                        |
+| M7        | `0.5.0 → 0.1.0` + `v0.1.0` tag | ✅ Completed | `c692f2c` | 24,809 / 24,937 +1 broken |
+| M7.5      | `0.1.0 → 0.2.0` + `v0.2.0` tag | ✅ Completed | *TBD on main merge* | 24,809 / 24,947 + 0 broken |
+| M8        | → `v0.3.0`      | Not started    |           |                        |
 
 **Principle III (Specification Conformance & Reference Parity)** is
-operationally fulfilled for both **server role** (M4, deepened at M5)
-and **client role** (M6).
+operationally fulfilled for **server role** (M4, deepened at M5),
+**client role** (M6), and **server-side h2 over TLS** (M7.5 via
+Reseau.jl).
 
 **Deferred upstream** (tracked in `upstream-bugs.md`):
 
-- OpenSSL.jl: `SSL_CTX_set_alpn_select_cb` binding missing — blocks
-  server-side h2 TLS ALPN selection.
+- OpenSSL.jl: `SSL_CTX_set_alpn_select_cb` binding missing —
+  **no longer blocking HTTP2.jl** as of M7.5 (worked around via
+  Reseau.jl). Still a valuable upstream addition for users who
+  want the OpenSSL-only code path without Reseau as a second
+  dependency.
 - Nghttp2Wrapper.jl: `HTTP2Server` handler drops response bodies
-  (`nghttp2_submit_response2` called with `C_NULL` data provider).
+  — **fixed upstream** at M7 via commit `c2e2a06`.
 
 ---
 
@@ -396,10 +401,99 @@ verification after registry propagation.
 
 ---
 
+## Milestone 7.5 — Reseau.jl TLS backend ✅
+
+**Status**: Completed (release commit on branch
+`009-reseau-tls-backend`, merged to main and tagged `v0.2.0`
+at release time; version `0.1.0 → 0.2.0`, 2026-04-13)
+
+Server-side h2 over TLS — unblocked. HTTP2.jl ships a second
+optional TLS backend via a new `ext/HTTP2ReseauExt.jl`
+package extension that uses
+[Reseau.jl](https://github.com/JuliaServices/Reseau.jl)
+(pinned to v1.0.1 via the General registry). Reseau binds
+`SSL_CTX_set_alpn_select_cb` internally at
+`src/5_tls.jl:725-732` in v1.0.1, which is the exact upstream
+gap in OpenSSL.jl that blocked server-side h2 at M5/M6/M7. The
+`upstream-bugs.md` OpenSSL entry is flipped from `open` to
+`worked-around via Reseau.jl`, and the M6 interop item whose
+server-side ALPN assertion was `@test_broken` is repointed at a
+Reseau TLS listener and flipped to a real `@test`.
+
+- [x] Add `Reseau = "802f3686-..."` to `[weakdeps]` +
+      `HTTP2ReseauExt = "Reseau"` to `[extensions]` in root
+      `Project.toml`. `[deps]` still empty.
+- [x] Export new `HTTP2.ALPN_H2_PROTOCOLS = ["h2"]` constant
+      from `src/HTTP2.jl` as the shared canonical ALPN list
+      for both `HTTP2OpenSSLExt` and `HTTP2ReseauExt`.
+- [x] Export three new generic-function stubs from
+      `src/HTTP2.jl`: `reseau_h2_server_config`,
+      `reseau_h2_client_config`, `reseau_h2_connect`. Each has
+      a full docstring explaining the constructor-style
+      pattern and the symmetry-break with M5's `set_alpn_h2!`
+      mutator.
+- [x] Create `ext/HTTP2ReseauExt.jl` (~70 lines) with the
+      three method implementations. Each method merges
+      `alpn_protocols = HTTP2.ALPN_H2_PROTOCOLS` into the
+      caller's kwargs and forwards to `Reseau.TLS.Config` or
+      `Reseau.TLS.connect`. Zero bridging code — Reseau's
+      `TLS.Conn <: IO` satisfies HTTP2.jl's IO adapter
+      contract natively.
+- [x] Add `Reseau` to `test/interop/Project.toml` `[deps]` +
+      `Reseau = "1"` in `[compat]`. Registry-resolved (no
+      `[sources]` pin — unlike Nghttp2Wrapper).
+- [x] Two new `Interop:` `@testitem` units:
+      - `Interop: h2 live TLS handshake (server-role via Reseau)`
+        — 8 assertions, ~0.7s, verifies both sides'
+        `connection_state(conn).alpn_protocol == "h2"` after
+        a real TLS handshake through `HTTP2.reseau_h2_server_config`.
+      - `Interop: ALPN helper with Reseau extension` — 13
+        assertions, regression test for the package-extension
+        auto-load flow.
+- [x] Repoint M6's `Interop: set_alpn_h2! live TLS handshake`
+      item: renamed to `... (Reseau server)`, server side
+      swapped from `Nghttp2Wrapper.HTTP2Server` to a Reseau TLS
+      listener built via `HTTP2.reseau_h2_server_config`,
+      client side unchanged (OpenSSL.jl + `HTTP2.set_alpn_h2!`),
+      `@test_broken selected == "h2"` flipped to `@test selected
+      == "h2"`. **Interop broken counter drops 1 → 0.**
+- [x] `docs/src/tls.md` restructured: new "TLS backends"
+      section with a comparison table + two subsections
+      (OpenSSL.jl, Reseau.jl), worked examples for both,
+      `@docs` blocks for the three new helpers + the
+      `ALPN_H2_PROTOCOLS` constant, symmetry-break narrative.
+      "Current limitations" updated to remove the
+      server-side h2 TLS blocker.
+- [x] `docs/src/client.md` gains a new
+      `### Over TLS (h2) via HTTP2ReseauExt` subsection with a
+      worked example using `HTTP2.reseau_h2_connect` +
+      `HTTP2.open_connection!`.
+- [x] `upstream-bugs.md` OpenSSL.jl entry:
+      `Status: open → worked-around via Reseau.jl`, full
+      `Workaround` narrative rewrite.
+- [x] Version `0.1.0 → 0.2.0`. Conventional commit prefix
+      `feat(tls)`. Documenter build warning-free at v0.2.0.
+
+**Exit criteria met**:
+- Main-env test suite unchanged at 24,809 assertions (M7.5 is
+  additive — no main-env items added).
+- Interop-env test suite grows from 24,937 + 1 broken to
+  **24,947 + 0 broken** (+10 assertions from the two new items
+  and the repointed M6 item; −1 broken).
+- Documenter build warning-free at v0.2.0.
+- `src/*.jl` files from M0–M6 untouched except for the
+  additive block in `src/HTTP2.jl` (one const + three function
+  stubs + exports + docstrings).
+- `ext/HTTP2OpenSSLExt.jl` untouched.
+- `.gitignore` untouched.
+- `docs/make.jl` pages array unchanged (still 10 entries).
+
+---
+
 ## Milestone 8 — gRPCServer.jl Reverse Integration
 
 **Status**: Not started
-**Target version**: → next tag after M7
+**Target version**: → `v0.3.0`
 
 Close the loop: make gRPCServer.jl consume HTTP2.jl as a dependency
 instead of vendoring its own copy. This is the acceptance test for

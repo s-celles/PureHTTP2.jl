@@ -7,6 +7,170 @@ and HTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/v2.0
 
 ## [Unreleased]
 
+## [0.2.0] — 2026-04-13
+
+Milestone 7.5 — **Reseau.jl TLS backend**. HTTP2.jl gains a
+second optional TLS backend via a new `HTTP2ReseauExt` package
+extension that uses
+[Reseau.jl](https://github.com/JuliaServices/Reseau.jl) for
+server-side h2 over TLS. The M6 upstream-bugs entry for
+OpenSSL.jl's missing `SSL_CTX_set_alpn_select_cb` binding is
+no longer a shipping blocker for HTTP2.jl — Reseau binds that
+callback internally at `src/5_tls.jl:725-732` in Reseau
+v1.0.1, so HTTP2.jl's `serve_connection!` can now accept
+`Reseau.TLS.Conn` instances that arrived via a handshake
+where the server-side ALPN select callback picked `"h2"`.
+
+### Added
+
+- **`HTTP2.ALPN_H2_PROTOCOLS :: Vector{String}`** — new
+  exported constant (`["h2"]`) in `src/HTTP2.jl`. The
+  canonical ALPN protocol list per RFC 7301 §3.1 and RFC
+  9113 §3.3, reused by both `HTTP2OpenSSLExt` and
+  `HTTP2ReseauExt` as the default when the caller passes no
+  explicit list.
+- **`HTTP2.reseau_h2_server_config(; cert_file, key_file, kwargs...)`**
+  — new exported generic function (stub in `src/HTTP2.jl`,
+  method in `ext/HTTP2ReseauExt.jl`). Builds a Reseau.jl
+  server-side `TLS.Config` with `alpn_protocols=["h2"]`
+  pre-populated. Requires `cert_file` and `key_file`;
+  forwards every other keyword to `Reseau.TLS.Config`.
+- **`HTTP2.reseau_h2_client_config(; kwargs...)`** — new
+  exported generic function. Builds a Reseau.jl client-side
+  `TLS.Config` with `alpn_protocols=["h2"]` pre-populated.
+  Thin wrapper over `Reseau.TLS.Config`.
+- **`HTTP2.reseau_h2_connect(address; kwargs...)`** — new
+  exported generic function. One-shot client helper that
+  calls `Reseau.TLS.connect(address; ...)` with
+  `alpn_protocols=["h2"]` merged in; returns a
+  fully-handshaken `Reseau.TLS.Conn` ready to hand to
+  `HTTP2.open_connection!`.
+- New `ext/HTTP2ReseauExt.jl` package extension module
+  (~70 lines) that provides the three `reseau_h2_*` methods
+  when both `HTTP2` and `Reseau.jl` are loaded in the same
+  environment. Mirrors the M5 `HTTP2OpenSSLExt` auto-load
+  pattern via Julia's `Base.get_extension` mechanism.
+- `Reseau = "802f3686-a58f-41ce-bb0c-3c43c75bba36"` added to
+  the root `Project.toml`'s `[weakdeps]` block; the
+  corresponding `HTTP2ReseauExt = "Reseau"` entry added to
+  `[extensions]`. `[deps]` remains empty (constitution
+  Principle I preserved).
+- Two new `Interop:` `@testitem` units in
+  `test/interop/testitems_interop.jl`:
+  - **`Interop: h2 live TLS handshake (server-role via Reseau)`**
+    — first live server-side h2-over-TLS cross-test. Stands
+    up a Reseau TLS listener on loopback with
+    `alpn_protocols=["h2"]`, accepts a client handshake from
+    a loopback `Reseau.TLS.connect` call, asserts both sides
+    observe `connection_state(conn).alpn_protocol == "h2"`,
+    and verifies that `TLS.Conn` satisfies the IO adapter
+    contract (`read`, `write`, `close`). 8 assertions,
+    completes in ~0.7 seconds.
+  - **`Interop: ALPN helper with Reseau extension`** —
+    regression test for the package-extension auto-load
+    flow. Verifies the three stubs gain methods when Reseau
+    is loaded, `Base.get_extension` finds the loaded
+    extension, default ALPN lists are `["h2"]`, explicit
+    overrides are honored, and the server config helper
+    enforces its required kwargs. 13 assertions.
+- New "TLS backends" section in `docs/src/tls.md` restructured
+  around a comparison table of the two backends (OpenSSL.jl
+  vs Reseau.jl) with worked examples for each path,
+  `@docs` blocks for the three new helpers + the
+  `ALPN_H2_PROTOCOLS` constant, and explicit documentation
+  of the constructor-vs-mutator symmetry-break between the
+  two extensions.
+- New "Over TLS (h2) via `HTTP2ReseauExt`" subsection in
+  `docs/src/client.md` with a worked example using
+  `HTTP2.reseau_h2_connect` + `HTTP2.open_connection!`.
+
+### Changed
+
+- `Project.toml` version bump `0.1.0 → 0.2.0` (minor: new
+  public API surface via new extension, no breaking changes
+  to v0.1.0 exports).
+- The M6 `Interop: set_alpn_h2! live TLS handshake` test item
+  is **repointed and renamed** to
+  `Interop: set_alpn_h2! live TLS handshake (Reseau server)`.
+  The server side is swapped from
+  `Nghttp2Wrapper.HTTP2Server` (which uses OpenSSL's
+  client-side `ssl_set_alpn` on a server context, effectively
+  a no-op for ALPN selection) to a Reseau TLS listener built
+  via `HTTP2.reseau_h2_server_config` (which calls
+  `SSL_CTX_set_alpn_select_cb`). The client side stays on
+  OpenSSL.jl with `HTTP2.set_alpn_h2!` — what changed is
+  just the peer performing the ALPN selection. The
+  `@test_broken selected == "h2"` assertion **flips to a real
+  `@test`** because the Reseau server actually negotiates `h2`.
+  **Interop broken counter drops from 1 to 0.**
+- `test/interop/Project.toml` gains `Reseau =
+  "802f3686-a58f-41ce-bb0c-3c43c75bba36"` in `[deps]` and
+  `Reseau = "1"` in `[compat]`. Registry-resolved (no
+  `[sources]` pin — Reseau is on the General registry at
+  v1.0.1, unlike Nghttp2Wrapper.jl).
+- `upstream-bugs.md` OpenSSL.jl
+  `SSL_CTX_set_alpn_select_cb` entry's `Status` field flips
+  from `open` to **`worked-around via Reseau.jl`**, with
+  `Workaround` rewritten to explain the Reseau backend path
+  and `Impact on HTTP2.jl` updated to note the shipping
+  blocker is resolved even though the upstream binding
+  itself is still missing.
+- `ROADMAP.md` gains a new M7.5 row in the status snapshot
+  table and an `## Milestone 7.5 — Reseau.jl TLS backend ✅`
+  section body. M8 shifts its target version from `next tag`
+  to `v0.3.0` (post-M7.5 numbering).
+- `docs/src/tls.md` "Current limitations" section updated:
+  the "server-side h2 TLS blocked on OpenSSL.jl upstream"
+  bullet is replaced with a note that server-side h2 is now
+  available via Reseau.jl and the analogous OpenSSL-only
+  helper still awaits the upstream binding.
+
+### Notes
+
+- **The symmetry-break is intentional and documented**.
+  `HTTP2.set_alpn_h2!(::OpenSSL.SSLContext)` is a **mutator**
+  on a mutable C-backed context (M5). The M7.5 Reseau
+  helpers are **constructors** because `Reseau.TLS.Config`
+  is an immutable Julia struct (`alpn_protocols` is
+  defensively `copy()`-ed at construction in Reseau v1.0.1
+  `src/5_tls.jl:240`), so an analogous mutator pattern is
+  structurally impossible. The two backends use different
+  generic function names — `set_alpn_h2!` vs `reseau_h2_*`
+  — to make the shape difference explicit at the call site.
+  See `specs/009-reseau-tls-backend/contracts/README.md`
+  Section 2 for the full rationale.
+- **Interop broken counter**: 1 → 0. The M6 item that was
+  `@test_broken` pending the upstream OpenSSL.jl binding now
+  has a real `@test` thanks to the swapped server side.
+  HTTP2.jl's interop suite reports **0 broken** for the
+  first time since M6.
+- **Main-env test suite is unchanged at 24,809 assertions**.
+  M7.5 adds no main-env test items — only interop additions
+  and one interop rename.
+- **Constitution Principle I preserved**. `[deps]` remains
+  empty. The new Reseau weakdep joins the existing OpenSSL
+  weakdep under the constitution's TLS/ALPN carve-out that
+  was activated at M5 — Reseau wraps OpenSSL internally via
+  `OpenSSL_jll` under the same carve-out, adding no new
+  dependency category.
+- **Constitution Principle III is deepened**. Server-role
+  parity was fulfilled at M4, client-role parity at M6. M7.5
+  adds the first live TLS cross-test where both the TLS
+  stack and HTTP2.jl run end-to-end through a real
+  handshake, extending Principle III onto the TLS axis.
+- **The M5 `HTTP2OpenSSLExt` package extension is
+  unchanged** at M7.5 — no method signatures, no exports, no
+  internal logic touched. Users who depend only on OpenSSL.jl
+  continue to get exactly the same API surface they had at
+  v0.1.0.
+- **Deferred post-v0.2.0**: users who specifically want
+  server-side h2 via the OpenSSL.jl path (without adding
+  Reseau.jl as a second TLS dependency) still need the
+  OpenSSL.jl upstream `SSL_CTX_set_alpn_select_cb` binding.
+  The `upstream-bugs.md` entry stays open from the
+  OpenSSL.jl perspective even though HTTP2.jl is no longer
+  blocked by it.
+
 ## [0.1.0] — 2026-04-12
 
 First tagged release of HTTP2.jl. Pure-Julia HTTP/2 library

@@ -109,4 +109,142 @@ export serve_connection!, set_alpn_h2!
 # Public API (Milestone 6): client layer
 export open_connection!
 
+"""
+    HTTP2.ALPN_H2_PROTOCOLS :: Vector{String}
+
+The canonical ALPN protocol list for HTTP/2 (`["h2"]`, per
+[RFC 7301 §3.1](https://www.rfc-editor.org/rfc/rfc7301#section-3.1)
+and [RFC 9113 §3.3](https://www.rfc-editor.org/rfc/rfc9113#section-3.3)).
+Reusable by any TLS backend — HTTP2.jl ships two optional TLS
+backend extensions that both consume this list:
+
+- `HTTP2OpenSSLExt` uses it as the default in
+  [`set_alpn_h2!(::OpenSSL.SSLContext)`](@ref set_alpn_h2!) when
+  the caller passes no explicit list.
+- `HTTP2ReseauExt` uses it as the default in the `reseau_h2_*`
+  constructor helpers
+  ([`reseau_h2_server_config`](@ref), [`reseau_h2_client_config`](@ref),
+  [`reseau_h2_connect`](@ref)) when the caller passes no
+  explicit list.
+
+Callers should treat this constant as read-only; callers who want
+a different list pass one explicitly via the `alpn_protocols`
+keyword argument.
+"""
+const ALPN_H2_PROTOCOLS = String["h2"]
+
+"""
+    HTTP2.reseau_h2_server_config(; cert_file, key_file, kwargs...) -> Reseau.TLS.Config
+
+Build a [Reseau.jl](https://github.com/JuliaServices/Reseau.jl)
+server-side TLS config with `alpn_protocols=["h2"]` pre-populated.
+Requires `cert_file::AbstractString` and `key_file::AbstractString`
+as keyword arguments; forwards every other keyword argument to
+`Reseau.TLS.Config`. If the caller passes an explicit
+`alpn_protocols=` kwarg, that value overrides the default
+[`ALPN_H2_PROTOCOLS`](@ref).
+
+This generic function is a **stub** in the main module — a method
+for `Reseau.TLS.Config` is provided by the `HTTP2ReseauExt` package
+extension, which loads automatically when Reseau.jl is in the
+environment. Without Reseau loaded, calling this function throws
+`MethodError`.
+
+# Example
+
+```julia
+using HTTP2, Reseau
+
+cfg = HTTP2.reseau_h2_server_config(;
+    cert_file = "server.crt",
+    key_file  = "server.key",
+)
+
+listener = Reseau.TLS.listen("tcp", "0.0.0.0:443", cfg)
+conn = Reseau.TLS.accept(listener)
+Reseau.TLS.handshake!(conn)
+# At this point Reseau.TLS.connection_state(conn).alpn_protocol
+# is "h2" (client advertised it) or nothing (client did not).
+HTTP2.serve_connection!(HTTP2.HTTP2Connection(), conn)
+```
+
+# Why not `set_alpn_h2!`?
+
+Milestone 5 shipped `HTTP2.set_alpn_h2!(ctx::OpenSSL.SSLContext)`
+as a **mutator** on a mutable C-backed context. `Reseau.TLS.Config`
+is an immutable Julia struct whose `alpn_protocols` field is
+defensively copied at construction, so an analogous mutator is
+structurally impossible. The `reseau_h2_*` helpers are
+**constructor-style** instead. See
+`specs/009-reseau-tls-backend/contracts/README.md` Section 2 for
+the full symmetry-break rationale.
+"""
+function reseau_h2_server_config end
+
+"""
+    HTTP2.reseau_h2_client_config(; kwargs...) -> Reseau.TLS.Config
+
+Build a [Reseau.jl](https://github.com/JuliaServices/Reseau.jl)
+client-side TLS config with `alpn_protocols=["h2"]` pre-populated.
+Thin convenience wrapper around `Reseau.TLS.Config` — forwards all
+keyword arguments. If the caller passes an explicit
+`alpn_protocols=` kwarg, that value overrides the default
+[`ALPN_H2_PROTOCOLS`](@ref).
+
+This generic function is a **stub** in the main module — a method
+for the Reseau config type is provided by the `HTTP2ReseauExt`
+package extension, which loads automatically when Reseau.jl is in
+the environment. Without Reseau loaded, calling this function
+throws `MethodError`.
+
+See also: [`reseau_h2_server_config`](@ref),
+[`reseau_h2_connect`](@ref), [`ALPN_H2_PROTOCOLS`](@ref).
+"""
+function reseau_h2_client_config end
+
+"""
+    HTTP2.reseau_h2_connect(address::AbstractString; kwargs...) -> Reseau.TLS.Conn
+
+One-shot client helper: calls `Reseau.TLS.connect(address; ...)`
+with `alpn_protocols=["h2"]` merged into the keyword arguments.
+Returns a fully-handshaken `Reseau.TLS.Conn` ready to hand to
+[`open_connection!`](@ref).
+
+If the caller passes an explicit `alpn_protocols=` kwarg, that
+value overrides the default [`ALPN_H2_PROTOCOLS`](@ref). Other
+Reseau.jl connect keywords such as `server_name`,
+`verify_peer`, and `handshake_timeout_ns` are forwarded
+unchanged.
+
+This generic function is a **stub** in the main module — a method
+is provided by the `HTTP2ReseauExt` package extension, which loads
+automatically when Reseau.jl is in the environment. Without
+Reseau loaded, calling this function throws `MethodError`.
+
+# Example
+
+```julia
+using HTTP2, Reseau
+
+client = HTTP2.reseau_h2_connect("tcp", "example.com:443";
+    server_name = "example.com")
+
+conn = HTTP2Connection()
+result = HTTP2.open_connection!(conn, client;
+    request_headers = Tuple{String,String}[
+        (":method",    "GET"),
+        (":path",      "/"),
+        (":scheme",    "https"),
+        (":authority", "example.com"),
+    ])
+
+close(client)
+```
+"""
+function reseau_h2_connect end
+
+# Public API (Milestone 7.5): Reseau TLS backend helpers
+export ALPN_H2_PROTOCOLS
+export reseau_h2_server_config, reseau_h2_client_config, reseau_h2_connect
+
 end # module HTTP2
