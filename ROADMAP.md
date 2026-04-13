@@ -27,7 +27,8 @@ builds, and RFC-grounded cross-tests against Nghttp2Wrapper.jl.
 | M7        | `0.5.0 → 0.1.0` + `v0.1.0` tag | ✅ Completed | `c692f2c` | 24,809 / 24,937 +1 broken |
 | M7.5      | `0.1.0 → 0.2.0` + `v0.2.0` tag | ✅ Completed | *TBD on main merge* | 24,809 / 24,947 + 0 broken |
 | Rename    | `0.2.0 → 0.3.0` + `v0.3.0` tag | ✅ Completed (`HTTP2` → `PureHTTP2`) | *TBD on main merge* | 24,809 / 24,960 + 0 broken |
-| M8        | → `v0.4.0`      | Not started    |           |                        |
+| M8        | `0.3.0 → 0.4.0` | ✅ Completed (request-handler API) | `317dd6e` | 24,857 / 25,007 + 1 broken |
+| M9        | → `v0.5.0`      | Not started    |           |                        |
 
 **Principle III (Specification Conformance & Reference Parity)** is
 operationally fulfilled for **server role** (M4, deepened at M5),
@@ -588,10 +589,111 @@ namespace.
 
 ---
 
-## Milestone 8 — gRPCServer.jl Reverse Integration
+## Milestone 8 — First-class Request-Handler API ✅
+
+**Status**: Completed (commit `317dd6e`, version `0.3.0 → 0.4.0`,
+2026-04-13)
+
+High-level server-side entry point so application code no longer
+has to reimplement the frame loop or scan `conn.streams` manually
+to serve HTTP/2 traffic. Shipped as a pure addition — the
+low-level `serve_connection!` from M5 stays unchanged.
+
+- [x] New public function
+      `serve_with_handler!(handler, conn::HTTP2Connection, io::IO; ...)`
+      in `src/handler.jl` (~490 lines with docstrings). Handler-first
+      positional argument supports Julia's `do`-block syntax.
+      Drives the same protocol plumbing as `serve_connection!`
+      (preface, SETTINGS, PING, GOAWAY, flow control, frame
+      read/write, `max_frame_size` enforcement) and additionally
+      dispatches a handler callback once per completed request
+      stream.
+- [x] New public value types `Request` (immutable wrapper over
+      `HTTP2Stream`) and `Response` (mutable accumulator) with 10
+      handler-facing accessors/mutators: `request_method`,
+      `request_path`, `request_authority`, `request_headers`,
+      `request_header`, `request_body`, `request_trailers`,
+      `set_status!`, `set_header!`, `write_body!` (two methods).
+      Total: **13 new exports**.
+- [x] Error-path contract: handler exceptions are caught inside
+      `serve_with_handler!` — a `@warn` with the full backtrace is
+      logged and the affected stream is reset with
+      `RST_STREAM(INTERNAL_ERROR)`. The listen loop above the entry
+      point is not killed by application bugs; other streams on
+      the same connection continue to be served.
+- [x] Auto-finalization contract: when the handler returns, the
+      server emits the accumulated response frames (HEADERS + DATA
+      frame(s) + END_STREAM) automatically. Handler code never has
+      to signal end-of-stream.
+- [x] Concurrency model: handlers are invoked **sequentially** in
+      stream-close order by the same task that drives the frame
+      loop. No per-stream `Task`, no write lock, no output queue —
+      per-stream concurrency is a future extension reserved for
+      M9+.
+- [x] 8 new `Handler:`-prefixed `@testitem` units in
+      `test/testitems_handler.jl` covering: buffered-body happy
+      path (with byte-equivalence assertion against a hand-rolled
+      `send_headers` + `send_data` emission — Principle III
+      discharge for the "dispatch shim" claim), empty-body
+      request, two interleaved streams on one connection, client
+      disconnect before END_STREAM, handler omits explicit
+      end-of-response, handler throws → RST_STREAM emission (with
+      `@test_logs` capture), connection survives handler throw,
+      and forward-compat docs inspection.
+- [x] New `examples/echo-handler/` example (54-line `server.jl` +
+      `README.md`) built on the new API. Sits alongside the
+      preserved low-level `examples/echo/` as the high-level
+      pedagogical companion. Reuses `examples/echo/client.jl`
+      unchanged. `examples/echo/server.jl` is byte-identical
+      pre/post feature; only its README is reframed from
+      "temporary workaround" to intentional low-level showcase.
+- [x] New `docs/src/handler.md` covering handler signature,
+      `Request`/`Response` reference (`@docs` blocks for all 13
+      symbols), error handling, concurrency model, and the
+      **"Future: streaming"** subsection naming
+      `Base.read(req, n)` and `flush(res)` as reserved
+      forward-compat extension points for a streaming follow-up
+      milestone. Wired into `docs/make.jl` between "TLS &
+      transport" and "Client" — pages array grows 10 → 11.
+- [x] Zero new `[deps]` — handler API uses only `Base` + `Sockets`
+      (stdlib). Principle I strictly upheld. `[weakdeps]` and
+      `[extensions]` unchanged.
+- [x] `src/serve.jl` untouched — FR-019 "zero existing-src edits"
+      steady state preserved. Only `src/PureHTTP2.jl` gains one
+      `include("handler.jl")` line and 13 exports. The ~30-line
+      frame-loop duplication between `serve_connection!` and
+      `serve_with_handler!` is an explicit trade-off; extracting
+      the shared loop into a helper is deferred to M9+.
+- [x] `CHANGELOG.md` gains a `## [0.4.0] — 2026-04-13` section
+      with `Added` and `Changed` subsections plus a "Forward
+      compatibility" note about the reserved streaming extension
+      points.
+
+**Exit criteria met**:
+
+- Main-env test suite: **24,857 pass / 0 fail / 0 broken**
+  (baseline 24,809 + 48 new `Handler:` assertions across 8 items).
+- Interop-env test suite: **25,007 pass / 1 pre-existing broken**
+  (unchanged from baseline — the broken item is the latent
+  `Transport: ALPN helper stub (no extension)` regression in the
+  cross-env discovery path, not introduced by M8).
+- Documenter build: warning-free at v0.4.0.
+- `examples/echo-handler/server.jl` = 54 lines with zero
+  frame-layer symbols (vs `examples/echo/server.jl` = 101 lines).
+  Manual end-to-end run against `examples/echo/client.jl` "hello,
+  echo" reproduces the expected `status = 200` / `body = hello,
+  echo` output from `examples/echo/README.md`.
+- Two clarified plan-level choices locked in: **error path**
+  (RST_STREAM with `INTERNAL_ERROR`, not implicit `:status=500`)
+  and **concurrency model** (sequential dispatch in stream-close
+  order, not per-stream `Task`).
+
+---
+
+## Milestone 9 — gRPCServer.jl Reverse Integration
 
 **Status**: Not started
-**Target version**: → `v0.4.0`
+**Target version**: → `v0.5.0`
 
 Close the loop: make gRPCServer.jl consume PureHTTP2.jl as a dependency
 instead of vendoring its own copy. This is the acceptance test for
@@ -601,6 +703,11 @@ the whole extraction.
       the vendored modules
 - [ ] Run gRPCServer.jl's full unit + integration + interop test
       suites against PureHTTP2.jl
+- [ ] Evaluate whether gRPCServer.jl can build on top of
+      `serve_with_handler!` (M8) directly — the handler-callback
+      shape is a natural fit for gRPC unary / server-streaming
+      methods, and adopting it removes another layer of
+      frame-loop code gRPCServer.jl would otherwise maintain
 - [ ] File any regressions discovered as issues on PureHTTP2.jl (not
       gRPCServer.jl); fix them here and release a patch if needed
 - [ ] Cut PureHTTP2.jl minor-bump release once gRPCServer.jl is fully
@@ -615,26 +722,153 @@ PureHTTP2.jl release with its HTTP/2 sources removed.
 
 ---
 
-## Future / Post-M8
+## Future / Post-M9
 
-Not scheduled — to be triaged after M8 lands:
+Not scheduled — to be triaged after M9 lands. Items are grouped
+by theme for readability; priority within each group is TBD.
 
-- **Multi-request client sessions** over one connection — M6 ships a
-  single-request API; long-lived sessions with stream multiplexing
-  are a separate concern
-- **Affirmative server push handling** — M6 only ships the negative
-  `ENABLE_PUSH=0` test; accepting, processing, or explicitly
-  refusing pushed streams is out of scope
-- **Multi-frame request bodies** — M6's `request_body` is a single
-  `Vector{UInt8}` written as one DATA frame; chunked/streamed
-  uploads are deferred
-- **Server-side h2 TLS** — blocked on the OpenSSL.jl upstream
-  `SSL_CTX_set_alpn_select_cb` binding (tracked in `upstream-bugs.md`)
-- **Stream priority** (RFC 9113 §5.3) beyond best-effort
-- **Extensible SETTINGS** per RFC 7540 §6.5.2
+### Handler API follow-ups (from M8)
+
+The M8 request-handler API deliberately shipped a buffered-body,
+single-task dispatch model as the MVP slice. The following
+items are **pure additions** — no symbol shipped in v0.4.0 will
+change signature, return type, or semantics when they land.
+
+- **Streaming request bodies** — incremental
+  `Base.read(req::Request, n::Integer) -> Vector{UInt8}` so
+  handlers can start processing before `END_STREAM` arrives.
+  Complement of the buffered `request_body(req)` accessor.
+  Forward-compat extension point reserved in M8 (see
+  `docs/src/handler.md` "Future: streaming"); deferred per the
+  Session 2026-04-13 clarification.
+- **Streaming response bodies** — `flush(res::Response)` to
+  emit currently-accumulated `res.body` as DATA frame(s) mid-
+  handler, clear the buffer, and let the handler keep writing.
+  Complement of the buffered `write_body!(res, bytes)` mutator.
+  Forward-compat extension point reserved in M8.
+- **Per-stream `Task` concurrency** for `serve_with_handler!` —
+  opt-in dispatch model so a handler that blocks on long-running
+  IO (database query, upstream HTTP call) does not stall other
+  streams on the same connection. Requires a write lock or frame
+  output channel consumed by a dedicated writer task. Additive
+  — the sequential default stays unchanged.
+- **Shared frame-loop refactor** — extract the read/write loop
+  body from `src/serve.jl` into a helper consumed by both
+  `serve_connection!` and `serve_with_handler!`. Retires the
+  ~30-line duplication in `src/handler.jl` introduced at M8 to
+  preserve the FR-019 "zero existing-src edits" steady state.
+  Pure internal refactor; public API unchanged.
+- **Formal interop cross-test for `serve_with_handler!`** — M8's
+  plan discharged Principle III via a main-env byte-equivalence
+  assertion against a hand-rolled `send_headers` + `send_data`
+  emission (`plan.md` Complexity Tracking). A proper
+  `Interop: h2c handshake via handler API` item in
+  `test/interop/testitems_interop.jl` is a cleaner long-term
+  discharge once there is non-shim behavior to validate
+  (streaming, per-stream Tasks, or content-length auto-detect
+  would all be triggers).
+- **`content-length` auto-detection** (opt-in) — M8 deliberately
+  does NOT set `content-length` automatically to preserve
+  forward-compat with streaming responses whose total length is
+  unknown at finalize time. An opt-in helper (e.g., a
+  `set_content_length=true` kwarg on `serve_with_handler!` or a
+  `finalize_content_length!(res)` utility) would reduce
+  boilerplate for buffered handlers. Non-breaking addition.
+- **Stream-state-aware mutator no-ops** — if the peer sends
+  `RST_STREAM` while a handler is mid-execution, subsequent
+  `set_status!` / `set_header!` / `write_body!` calls currently
+  succeed locally and then get silently dropped at finalize
+  time. They should become no-ops with a `@warn "stream was
+  reset by peer"` when the underlying `HTTP2Stream` is in the
+  `CLOSED` state, matching the existing "Response already
+  finalized" pattern in `src/handler.jl`.
+- **Handler middleware patterns** — documentation + worked
+  examples of composable `handler(req, res)` wrappers for
+  logging (`request received` / `response sent` with timing),
+  auth (check `authorization` header → set 401 or delegate),
+  CORS (add `access-control-*` headers), and request ID
+  injection. No new library code — just a cookbook page
+  demonstrating the composition pattern on top of the M8
+  primitives.
+- **Trailer-producing handlers** — M8 exposes `request_trailers`
+  for reads but the `Response` type has no equivalent for
+  emitting trailers on the response side. Adding
+  `set_trailer!(res, name, value)` + trailer emission in
+  `_finalize_response!` would complete the read/write symmetry.
+  Useful for gRPC server-side status trailers (`grpc-status`,
+  `grpc-message`).
+
+### New example directories
+
+Each of these would live under `examples/` and ship with its own
+`server.jl` + `README.md`, following the shape established by
+`examples/echo/` and `examples/echo-handler/`.
+
+- **`examples/json-api/`** — small REST-ish JSON endpoint built
+  on `serve_with_handler!`. Demonstrates routing by
+  `request_path`, `application/json` content-type handling,
+  reading a JSON request body, writing a JSON response body.
+  Reuses `JSON.jl` from the test-target deps as an example-only
+  dependency in a new `examples/json-api/Project.toml`.
+- **`examples/static-files/`** — serving static files from a
+  directory. Demonstrates MIME-type detection via file
+  extension, `content-length` from `stat()`, 404 on missing
+  files, 405 on non-GET methods. Good showcase for the
+  read-side of `Request` (method/path inspection) and the
+  write-side of `Response` (file-streamed body, content-type,
+  cache headers).
+- **`examples/echo-h2-tls/`** — combines
+  `reseau_h2_server_config` (M7.5) + `serve_with_handler!` (M8)
+  for a full h2-over-TLS demo. Requires a test cert fixture (can
+  reuse `test/fixtures/selfsigned.{crt,key}` from M6). The
+  canonical "production-shaped" server example — what real-world
+  PureHTTP2.jl consumers will most often copy-paste.
+- **`examples/router/`** — tiny routing layer over
+  `request_method` + `request_path` dispatching to per-route
+  handler functions. Demonstrates the handler-as-composition
+  pattern by wrapping multiple per-route `handler(req, res)`
+  functions into a single dispatching top-level handler. No
+  library changes — this is a pure documentation example.
+- **`examples/graceful-shutdown/`** — catching `SIGTERM` /
+  `SIGINT` (via `Base.atexit` or a `ccall` to `signal`),
+  emitting a GOAWAY frame, draining in-flight handlers before
+  closing the listen socket. The current echo examples use a
+  hard `Ctrl-C` stop — a proper shutdown demo is a useful
+  complement for production deployments.
+- **`examples/trailers/`** — once response-side trailer emission
+  lands (see Handler API follow-ups above), a minimal example
+  showing how to emit `grpc-status`/`grpc-message`-shaped
+  trailers. Before that lands, a read-side-only example
+  showcasing `request_trailers` on a handler that inspects
+  client-sent trailers is also viable.
+
+### Protocol & performance (unchanged from prior ROADMAPs)
+
+- **Multi-request client sessions** over one connection — M6
+  ships a single-request API; long-lived sessions with stream
+  multiplexing are a separate concern.
+- **Affirmative server push handling** — M6/M8 only ship the
+  negative `ENABLE_PUSH=0` test; accepting, processing, or
+  explicitly refusing pushed streams is out of scope.
+- **Stream priority** (RFC 9113 §5.3) beyond best-effort.
+- **Extensible SETTINGS** per RFC 7540 §6.5.2.
 - **Performance benchmarking harness** (`benchmark/`) with a
-  baseline vs nghttp2 throughput comparison
+  baseline vs nghttp2 throughput comparison. The handler API
+  (M8) is a natural measurement target — allocation per
+  request, frames per second per connection.
 - **Fuzz harness** for the frame decoder (pure-Julia, e.g.
-  `Supposition.jl`)
-- **Allocation-free hot paths** for DATA frame forwarding
+  `Supposition.jl`).
+- **Allocation-free hot paths** for DATA frame forwarding.
+
+### Documentation
+
+- **Migration guide** from low-level `serve_connection!` (M5) to
+  the high-level `serve_with_handler!` (M8), targeted at any
+  gRPCServer.jl-era consumer who already has manual frame-loop
+  code. A short `docs/src/migration.md` page with before/after
+  diffs.
+- **Performance cookbook** — once benchmarks exist, document the
+  memory and latency characteristics of the handler API and
+  when to fall back to `serve_connection!` for raw-frame
+  access.
 - **macOS / Windows interop CI** — deferred across M4–M6
