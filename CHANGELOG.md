@@ -7,6 +7,104 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.5.0] — 2026-04-13
+
+**Write-side streaming.** Activate the v0.4.0 forward-compat
+reservation by shipping `Base.flush(::Response)` as the
+mid-handler streaming primitive. Handlers can now emit
+response body bytes as HTTP/2 DATA frames incrementally —
+before the handler function returns — unblocking Server-Sent
+Events feeds, long-running handlers with progress output,
+chunked downloads, and any use case where the buffered-only
+handler shape was a structural limitation. Ships with a new
+`examples/sse/` directory as the canonical streaming showcase.
+
+### Added
+
+- New method `Base.flush(res::PureHTTP2.Response)` that emits
+  currently-accumulated `res.body` as HTTP/2 DATA frame(s)
+  immediately (not at handler return), clears the body buffer,
+  and returns `res` for chaining. The **first** call also
+  emits the response HEADERS frame carrying the current
+  `res.status` and `res.headers` — the "lazy HEADERS" commit.
+  Subsequent flushes emit DATA only. Flush is always
+  non-terminal: `END_STREAM` is emitted by the server's
+  finalize path when the handler returns (as a separate
+  zero-length DATA frame if the handler finishes with an
+  empty body after a prior flush). The method is not
+  exported — handlers call it via the normal `flush(res)`
+  syntax because `Base.flush` is already in every Julia
+  scope. See `docs/src/handler.md` "Streaming" section.
+- New `examples/sse/` directory containing `server.jl`
+  (53-line SSE tick handler emitting 5 `data: tick N\n\n`
+  events at 1-second intervals on path `/ticks`, using
+  `flush(res)` + `sleep(1.0)` in a loop) and `README.md`
+  (running instructions with `curl -N --http2-prior-knowledge`,
+  explanation of the generic-primitive-vs-SSE distinction,
+  variants for different tick counts or infinite streams).
+  Complements the non-streaming `examples/echo-handler/`
+  sibling example shipped in v0.4.0.
+- 8 new `Handler:`-prefixed `@testitem` units in
+  `test/testitems_handler.jl` covering: single flush emits
+  DATA before handler return (cooperative-channel
+  coordination pattern), multiple flushes emit distinct DATA
+  frames, buffered-only handler wire-identical to v0.4.0
+  (byte-equivalence regression guard), `set_status!` /
+  `set_header!` post-flush no-op with warn, `write_body!`
+  still works post-flush, flush-then-throw RST_STREAM
+  emission, and connection survives streaming handler throw
+  with a second successful stream.
+
+### Changed
+
+- `set_status!(res, code)` and `set_header!(res, name, value)`
+  gain a new no-op branch: when the response HEADERS have
+  already been emitted on the wire (by a prior `flush(res)`
+  call), these mutators log `@warn "Response headers already
+  on the wire; … is a no-op"` and return `res` unchanged.
+  Handlers that never call `flush` (the v0.4.0 buffered-only
+  shape) see no change — the new branch is additive and the
+  FR-009 regression guard `Handler: buffered-only handler
+  wire-identical to M8` explicitly verifies byte-identical
+  wire output for buffered handlers.
+- `Response` mutable struct gains two new internal fields:
+  `io::Union{IO, Nothing}` (transport reference set by
+  `serve_with_handler!` before handler invocation — lets
+  `flush` reach the wire from inside the handler) and
+  `headers_sent::Bool` (commit-state tracker set by the
+  first `flush` after HEADERS emission). The public
+  constructor `Response(conn::HTTP2Connection, stream_id::UInt32)`
+  signature is unchanged — both new fields default-initialize
+  to `nothing` and `false` respectively.
+- `_finalize_response!` (internal) branches on
+  `res.headers_sent`: when `false` (buffered-only path),
+  behavior is byte-identical to v0.4.0; when `true` (streaming
+  path), HEADERS are not re-emitted and the remaining body
+  is emitted as a terminal DATA frame with `END_STREAM` —
+  or a zero-length DATA frame with `END_STREAM` if the body
+  is empty (wire-legal per RFC 9113 §6.1).
+- `docs/src/handler.md`: the v0.4.0 "Future: streaming"
+  subsection is promoted to a live `## Streaming` top-level
+  section containing prose, a worked example sourced from
+  `examples/sse/server.jl`, an `@docs` block for the new
+  `Base.flush(::Response)` method, explicit coverage of the
+  lazy-HEADERS semantics and post-flush mutator no-op
+  contract, and the error-path contract clarification for
+  mid-stream throws. A smaller "Future: request-side
+  streaming" paragraph preserves the reservation for
+  `Base.read(req::Request, n::Integer)` which remains a
+  deferred forward-compat extension point.
+
+### Forward compatibility
+
+The **read side** of streaming (incremental request-body
+reads) remains reserved as a forward-compat extension point
+for a follow-up milestone: `Base.read(req::Request, n::Integer)`
+will complement the buffered `request_body(req)` accessor that
+ships today. When it lands, existing handlers that call
+`request_body(req)` will continue to work unchanged — the new
+method is a pure addition, not a replacement.
+
 ## [0.4.0] — 2026-04-13
 
 **First-class request-handler API.** New high-level server entry

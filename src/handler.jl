@@ -1,3 +1,5 @@
+import Base: flush
+
 # Milestone 8: first-class request-handler API.
 #
 # `serve_with_handler!` is the high-level server-side entry point:
@@ -181,13 +183,16 @@ when that extension lands.
 mutable struct Response
     conn::HTTP2Connection
     stream_id::UInt32
+    io::Union{IO, Nothing}
     status::Int
     headers::Vector{Tuple{String, String}}
     body::Vector{UInt8}
     finalized::Bool
+    headers_sent::Bool
 
     function Response(conn::HTTP2Connection, stream_id::UInt32)
-        return new(conn, stream_id, 200, Tuple{String, String}[], UInt8[], false)
+        return new(conn, stream_id, nothing, 200,
+                   Tuple{String, String}[], UInt8[], false, false)
     end
 end
 
@@ -197,10 +202,20 @@ end
 Set the response `:status` pseudo-header to `code`. No validation
 is performed — any integer is accepted. Returns `res` for
 chaining.
+
+After the response HEADERS have been emitted on the wire (either
+by a prior [`flush(res)`](@ref Base.flush) call or by the server's
+finalize path), this function becomes a no-op that logs
+`@warn "Response headers already on the wire"`. Handlers that
+want to mutate the status must do so BEFORE the first flush.
 """
 function set_status!(res::Response, code::Integer)
     if res.finalized
         @warn "Response already finalized; set_status! is a no-op"
+        return res
+    end
+    if res.headers_sent
+        @warn "Response headers already on the wire; set_status! is a no-op"
         return res
     end
     res.status = Int(code)
@@ -215,10 +230,20 @@ with the same name append rather than replace — HTTP/2 allows
 repeated headers (e.g., `Set-Cookie`). Do NOT use this function
 for the `:status` pseudo-header; use [`set_status!`](@ref)
 instead. Returns `res` for chaining.
+
+After the response HEADERS have been emitted on the wire (either
+by a prior [`flush(res)`](@ref Base.flush) call or by the server's
+finalize path), this function becomes a no-op that logs
+`@warn "Response headers already on the wire"`. Handlers that
+want to mutate response headers must do so BEFORE the first flush.
 """
 function set_header!(res::Response, name::AbstractString, value::AbstractString)
     if res.finalized
         @warn "Response already finalized; set_header! is a no-op"
+        return res
+    end
+    if res.headers_sent
+        @warn "Response headers already on the wire; set_header! is a no-op"
         return res
     end
     push!(res.headers, (String(name), String(value)))
@@ -246,6 +271,126 @@ function write_body!(res::Response, bytes::AbstractVector{UInt8})
 end
 function write_body!(res::Response, str::AbstractString)
     return write_body!(res, codeunits(String(str)))
+end
+
+# -- Base.flush(::Response) — streaming primitive ---------------------
+
+"""
+    Base.flush(res::Response) -> Response
+
+Emit the currently-accumulated response body as HTTP/2 DATA
+frame(s) immediately, without waiting for the handler function
+to return. The first call to `flush(res)` on a response also
+emits the response HEADERS frame carrying the current `res.status`
+and `res.headers` list — this is the "lazy HEADERS" commit.
+
+After a successful flush, `res.body` is empty and subsequent
+`write_body!` calls start filling a fresh buffer. Multiple
+flush/write cycles are the intended usage pattern for streaming
+handlers:
+
+```julia
+serve_with_handler!(HTTP2Connection(), sock) do req, res
+    set_status!(res, 200)
+    set_header!(res, "content-type", "text/event-stream")
+    for i in 1:5
+        write_body!(res, "data: tick \$i\\n\\n")
+        flush(res)       # push this event to the wire NOW
+        sleep(1.0)
+    end
+end
+```
+
+# Non-terminal emission
+
+`flush(res)` NEVER sets `END_STREAM` on its emitted frames. The
+`END_STREAM` marker is emitted exclusively by the server's
+finalize path when the handler function returns. This keeps the
+semantics simple: `flush` = "commit some bytes", handler return
+= "close the stream". A handler that calls flush and then
+returns emits a separate zero-length DATA frame with END_STREAM
+as the terminal marker — negligible (9 bytes) overhead, wire-legal
+per RFC 9113 §6.1.
+
+# Lazy HEADERS → mutator freeze
+
+Once `flush(res)` has emitted HEADERS on the wire,
+`set_status!` and `set_header!` become no-ops that log a
+`@warn "Response headers already on the wire"`. Handlers that
+need to mutate the response headers must do so BEFORE the
+first flush. `write_body!` remains functional — it appends to
+the now-emptied buffer for the next flush.
+
+# Error path under streaming
+
+If the handler throws after having flushed one or more chunks,
+the wire sequence becomes HEADERS + DATA(chunk-1) + ... +
+RST_STREAM(INTERNAL_ERROR). Bytes already on the wire cannot be
+rolled back — this is inherent to streaming, not a bug. The
+connection itself survives (other streams continue to be
+served), matching the M8 error-path contract.
+
+# Edge cases
+
+- **Empty-body first flush**: emits HEADERS only (no DATA frame).
+  Subsequent `write_body!` + `flush` works normally.
+- **Empty-body subsequent flush**: total no-op — no HEADERS
+  re-emission, no DATA frame, no `@warn`.
+- **Flush on a finalized response**: no-op with
+  `@warn "Response already finalized; flush is a no-op"`.
+- **Flush on a response with no attached transport**
+  (`res.io === nothing`): throws `ArgumentError`. This only
+  happens if the `Response` was constructed outside
+  `serve_with_handler!`; normal handler code never reaches
+  this branch.
+
+# Forward compatibility
+
+This method has a single positional argument. Future releases
+may add an optional keyword argument (e.g.,
+`end_stream::Bool=false`) as a pure addition without breaking
+any existing call site.
+
+A companion read-side primitive `Base.read(req::Request, n::Integer)`
+for incremental request-body reads remains **reserved** as a
+forward-compat extension point — not shipped in v0.5.0. See
+`docs/src/handler.md` "Future: request-side streaming" for the
+status.
+
+Returns `res` for chaining.
+"""
+function Base.flush(res::Response)
+    if res.finalized
+        @warn "Response already finalized; flush is a no-op"
+        return res
+    end
+    if res.io === nothing
+        throw(ArgumentError(
+            "flush(res) called on a Response not attached to a transport — " *
+            "this can only be called from inside a handler"))
+    end
+
+    # Emit HEADERS on the first flush only. Subsequent flushes
+    # skip this step.
+    if !res.headers_sent
+        resp_headers = Tuple{String, String}[(":status", string(res.status))]
+        append!(resp_headers, res.headers)
+        for f in send_headers(res.conn, res.stream_id, resp_headers; end_stream=false)
+            write(res.io, encode_frame(f))
+        end
+        res.headers_sent = true
+    end
+
+    # Emit DATA frame(s) if there are bytes to flush. Empty body
+    # after the HEADERS-emitted path is a no-op.
+    if !isempty(res.body)
+        for f in send_data(res.conn, res.stream_id, res.body; end_stream=false)
+            write(res.io, encode_frame(f))
+        end
+        empty!(res.body)
+    end
+
+    return res
 end
 
 # -- serve_with_handler! -----------------------------------------------
@@ -432,6 +577,7 @@ function serve_with_handler!(handler, conn::HTTP2Connection, io::IO;
 
             req = Request(conn, stream)
             res = Response(conn, stream_id)
+            res.io = io
 
             try
                 handler(req, res)
@@ -469,14 +615,53 @@ end
 # Internal: emit HEADERS + optional DATA frames for a completed
 # handler invocation. Not exported — this is the finalizer
 # called only by `serve_with_handler!`.
+#
+# Branches on `res.headers_sent`:
+#
+# - Branch A (`headers_sent == false`, M9/012 FR-009 byte-identical
+#   to M8): handler never called flush. Emit HEADERS (with
+#   END_STREAM on HEADERS if body is empty) + optional DATA frame
+#   atomically.
+#
+# - Branch B (`headers_sent == true`, M9/012 streaming path): handler
+#   called flush at least once, so HEADERS are already on the wire
+#   and some or all of the body has already been emitted as
+#   non-terminal DATA frames. Emit any remaining body as a
+#   **terminal** DATA frame with END_STREAM. If no body is pending,
+#   emit a zero-length DATA frame with END_STREAM as the terminal
+#   marker (wire-legal per RFC 9113 §6.1).
 function _finalize_response!(conn::HTTP2Connection, io::IO,
                              stream_id::UInt32, res::Response)
+    if res.headers_sent
+        # Branch B: streaming path. HEADERS already on the wire.
+        # If body is empty, `send_data` returns no frames at all
+        # (its inner loop is `while remaining > 0`), so we must
+        # emit a zero-length DATA frame with END_STREAM by hand
+        # to close the stream. Otherwise `send_data` produces the
+        # terminal chunk(s) naturally with END_STREAM on the last.
+        if isempty(res.body)
+            terminal = data_frame(stream_id, UInt8[]; end_stream=true)
+            write(io, encode_frame(terminal))
+            # Update stream state to reflect that we sent END_STREAM.
+            stream = get_stream(conn, stream_id)
+            if stream !== nothing
+                send_data!(stream, 0, true)
+            end
+        else
+            for f in send_data(conn, stream_id, res.body; end_stream=true)
+                write(io, encode_frame(f))
+            end
+        end
+        return nothing
+    end
+
+    # Branch A: buffered path. Byte-identical to M8 (FR-009).
     resp_headers = Tuple{String, String}[(":status", string(res.status))]
     append!(resp_headers, res.headers)
 
     # If the body is empty, END_STREAM rides on the HEADERS frame —
     # no DATA frame is emitted at all. This matches the "empty body"
-    # acceptance scenario (US1 acceptance).
+    # acceptance scenario.
     body_empty = isempty(res.body)
     for f in send_headers(conn, stream_id, resp_headers; end_stream=body_empty)
         write(io, encode_frame(f))

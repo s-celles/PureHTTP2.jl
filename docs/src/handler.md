@@ -216,36 +216,142 @@ your listen loop.
   the backing stream from the connection's internal state
   immediately after finalization.
 
-## Future: streaming
+## Streaming
 
-Incremental request-body read and incremental response-body
-write are **not shipped in this milestone** per the
-Session 2026-04-13 clarification. Two named future extension
-points are reserved for a follow-up milestone:
+Mid-handler **response-body streaming** is live as of v0.5.0 via
+the new `Base.flush(::Response)` primitive. Handlers call
+`flush(res)` to push currently-accumulated body bytes to the
+wire as HTTP/2 DATA frame(s) **immediately**, without waiting
+for the handler function to return. The accumulated buffer is
+cleared after each flush, and subsequent `write_body!` calls
+start filling a fresh buffer — a natural rhythm for streaming
+handlers is `write_body!` → `flush` → compute/sleep →
+`write_body!` → `flush` → ...
 
-- **Read side**: `Base.read(req::Request, n::Integer) -> Vector{UInt8}`
-  for incremental body reads before `END_STREAM`. Complement of
-  the buffered `request_body(req::Request)` accessor shipped in
-  v0.4.0.
-- **Write side**: `flush(res::Response)` for incremental body
-  writes — will emit currently-accumulated `res.body` as DATA
-  frame(s) immediately, clear the buffer, and return `res` for
-  chaining. Complement of the buffered `write_body!(res, bytes)`
-  mutator shipped in v0.4.0.
+This unblocks use cases that cannot be expressed with the
+buffered-only handler shape:
 
-Both are **pure additions** — no symbol shipped in v0.4.0 will
-change signature, return type, or semantics when they land.
-Existing buffered handlers will continue to work unchanged; only
-streaming handlers need to opt in by calling `Base.read` /
-`flush` respectively.
+- Server-Sent Events (SSE) feeds that push updates every second
+- Long-running computations that emit progress before completion
+- Chunked downloads where the server yields bytes incrementally
+- gRPC server-streaming methods (once PureHTTP2.jl grows a gRPC
+  adapter in a future milestone)
 
-If you are planning a handler that will later want streaming
-semantics, structure it to call `request_body` exactly once and
-to accumulate response bytes via one or more `write_body!` calls.
-When the streaming extensions land you will be able to replace
-`request_body(req)` with a loop over `Base.read(req, n)` and
-insert `flush(res)` calls between `write_body!` calls — no other
-changes to the handler shape will be needed.
+### Quick streaming example
+
+```julia
+using PureHTTP2
+using Sockets
+
+function sse_tick_handler(req::Request, res::Response)
+    if request_path(req) != "/ticks"
+        set_status!(res, 404)
+        set_header!(res, "content-type", "text/plain; charset=utf-8")
+        write_body!(res, "Not Found\n")
+        return
+    end
+
+    set_status!(res, 200)
+    set_header!(res, "content-type", "text/event-stream")
+    set_header!(res, "cache-control", "no-cache")
+    set_header!(res, "server", "PureHTTP2.jl-sse-example")
+
+    for i in 1:5
+        write_body!(res, "data: tick $i\n\n")
+        flush(res)       # push this event to the wire NOW
+        sleep(1.0)
+    end
+end
+```
+
+Run the server and hit it with curl in streaming mode:
+
+```sh
+curl -N --http2-prior-knowledge http://127.0.0.1:8787/ticks
+```
+
+You will see `data: tick 1` through `data: tick 5` arrive one
+per second, not all-at-once after 5 seconds. The `-N` flag
+disables curl's output buffering so each line prints as soon
+as it arrives. This example is maintained verbatim at
+[`examples/sse/server.jl`](https://github.com/s-celles/PureHTTP2.jl/blob/main/examples/sse/server.jl).
+
+```@docs
+Base.flush(::PureHTTP2.Response)
+```
+
+### Lazy HEADERS emission
+
+The **first** call to `flush(res)` on a given response emits
+the response HEADERS frame carrying the current `res.status`
+and `res.headers` — **before** the DATA frame for the flushed
+body. Subsequent flushes emit DATA frames only; HEADERS are not
+repeated. This is the only wire-legal ordering per RFC 9113
+§8.1 (DATA must follow HEADERS on any stream).
+
+Once HEADERS are on the wire, `set_status!` and `set_header!`
+become **no-ops** that log `@warn "Response headers already on
+the wire; … is a no-op"`. Handlers that want to mutate status
+or headers must do so **before** the first flush:
+
+```julia
+function streaming_handler(req::Request, res::Response)
+    # ✓ OK: mutate status + headers before any flush
+    set_status!(res, 200)
+    set_header!(res, "content-type", "text/plain")
+
+    write_body!(res, "chunk-1")
+    flush(res)                        # HEADERS + DATA emitted here
+
+    # ✗ NO-OP: HEADERS already on the wire, this logs a @warn
+    set_header!(res, "x-late", "too late")
+
+    write_body!(res, "chunk-2")
+    flush(res)                        # DATA only (no HEADERS repeat)
+end
+```
+
+`write_body!` continues to work after a flush — it appends to
+the now-emptied buffer so the next flush emits the next DATA
+frame.
+
+### Error path under streaming
+
+The [Error handling](#Error-handling) contract is unchanged: if
+the handler throws, `serve_with_handler!` catches the exception,
+logs `@warn "handler threw"`, and emits `RST_STREAM(INTERNAL_ERROR)`
+on the affected stream.
+
+The one clarification for streaming: if the handler has
+**already flushed** one or more chunks before throwing, the
+wire sequence becomes:
+
+```
+HEADERS(:status=200) + DATA(chunk-1) + … + DATA(chunk-N) + RST_STREAM(INTERNAL_ERROR)
+```
+
+This is valid HTTP/2. Clients observe a truncated response with
+an explicit abort signal. **Bytes already on the wire cannot be
+rolled back** — this is inherent to streaming, not a bug. The
+connection itself survives (other streams on the same
+connection continue to be served normally).
+
+### Future: request-side streaming
+
+The **write side** of streaming ships in v0.5.0 via
+`Base.flush(::Response)`. The **read side** — incremental
+request-body reads before `END_STREAM` — is still **reserved**
+as a forward-compat extension point for a follow-up milestone:
+
+- `Base.read(req::Request, n::Integer) -> Vector{UInt8}` will
+  read `n` bytes from the request body incrementally,
+  complementing the buffered `request_body(req)` accessor that
+  ships today.
+
+When it lands, existing handlers that call `request_body(req)`
+will continue to work unchanged — the new method is a pure
+addition, not a replacement. Handlers that want incremental
+reads will opt in by calling `Base.read` instead.
 
 ## See also
 
