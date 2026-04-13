@@ -7,6 +7,84 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+## [0.4.0] — 2026-04-13
+
+**First-class request-handler API.** New high-level server entry
+point `serve_with_handler!` that dispatches an application-level
+request handler once per completed HTTP/2 request stream.
+Application code no longer has to reimplement the frame loop or
+scan `conn.streams` manually — those concerns move inside the
+library. The existing low-level `serve_connection!` from v0.1.0
+remains exported and unchanged.
+
+### Added
+
+- `PureHTTP2.serve_with_handler!(handler, conn::HTTP2Connection, io::IO;
+  max_frame_size::Int = DEFAULT_MAX_FRAME_SIZE) -> Nothing` — new
+  high-level server entry point. Drives the HTTP/2 protocol
+  plumbing (preface, SETTINGS, PING, GOAWAY, flow control, frame
+  read/write) AND invokes `handler(req, res)` once per completed
+  request stream. Handler-first positional argument supports
+  Julia's `do`-block syntax. Catches handler exceptions (emits
+  `RST_STREAM(INTERNAL_ERROR)` and continues serving other
+  streams on the same connection) and auto-finalizes the response
+  on handler return.
+- `PureHTTP2.Request` — immutable read-only view of an incoming
+  request passed to the handler. Accessor functions:
+  `request_method`, `request_path`, `request_authority`,
+  `request_headers`, `request_header`, `request_body`,
+  `request_trailers`.
+- `PureHTTP2.Response` — mutable write-accumulator for the
+  outgoing response. Mutator functions: `set_status!`,
+  `set_header!`, `write_body!` (two methods: `AbstractVector{UInt8}`
+  and `AbstractString`). Status defaults to 200; headers and
+  body default to empty. The server finalizes the response
+  (emits HEADERS + DATA frames + END_STREAM) when the handler
+  returns; handlers do not need to explicitly signal
+  end-of-stream.
+- `examples/echo-handler/` — new h2c echo example built on
+  `serve_with_handler!`. Sits alongside the preserved
+  `examples/echo/` (low-level frame-loop showcase) as the
+  high-level pedagogical companion. Reuses `examples/echo/client.jl`
+  unchanged.
+- `docs/src/handler.md` — new "Server handler" documentation
+  page covering the handler API reference, the concurrency
+  model (sequential dispatch in stream-close order), the
+  error-path contract (RST_STREAM with INTERNAL_ERROR on
+  handler throw), and the forward-compat "Future: streaming"
+  subsection naming `Base.read(req, n)` and `flush(res)` as the
+  reserved future extension points for a streaming follow-up
+  milestone. Wired into `docs/make.jl`'s `pages` array between
+  "TLS & transport" and "Client".
+- 8 new `Handler:`-prefixed `@testitem` units in
+  `test/testitems_handler.jl` covering: buffered-body happy
+  path (with byte-equivalence assertion against a hand-rolled
+  frame emission), empty body, interleaved streams on one
+  connection, client disconnect before END_STREAM, handler
+  throws → RST_STREAM emission, connection survives handler
+  throw, handler omits explicit end-of-response (auto-finalize),
+  and forward-compat extension-point docs inspection.
+
+### Changed
+
+- `examples/echo/README.md`: the "Why the server does not use
+  `serve_connection!`" paragraph is reframed from "temporary
+  workaround until PureHTTP2.jl grows a first-class request-handler
+  API" to an intentional low-level pedagogical showcase, with a
+  cross-reference to the new `examples/echo-handler/` sibling
+  example and a link to `docs/src/handler.md`.
+
+### Forward compatibility
+
+The handler signature shipped in v0.4.0 is forward-compatible
+with a future streaming extension. Incremental request-body
+read (`Base.read(req::Request, n::Integer)`) and incremental
+response-body write (`flush(res::Response)`) are reserved as
+**pure additions** for a follow-up milestone — no symbol in
+v0.4.0 will change signature, return type, or semantics when
+they land. See the "Future: streaming" subsection of
+`docs/src/handler.md` for the forward-compat contract.
+
 ## [0.3.0] — 2026-04-13
 
 **Package rename: `HTTP2` → `PureHTTP2`.** The top-level Julia

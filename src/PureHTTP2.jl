@@ -7,6 +7,7 @@ include("flow_control.jl")
 include("connection.jl")
 include("serve.jl")
 include("client.jl")
+include("handler.jl")
 
 """
     set_alpn_h2!(ctx, protocols=["h2"])
@@ -108,6 +109,13 @@ export serve_connection!, set_alpn_h2!
 
 # Public API (Milestone 6): client layer
 export open_connection!
+
+# Public API (Milestone 8): request-handler API
+export serve_with_handler!
+export Request, Response
+export request_method, request_path, request_authority
+export request_headers, request_header, request_body, request_trailers
+export set_status!, set_header!, write_body!
 
 """
     PureHTTP2.ALPN_H2_PROTOCOLS :: Vector{String}

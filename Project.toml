@@ -1,6 +1,6 @@
 name = "PureHTTP2"
 uuid = "7d1e1b98-28e7-4969-8df9-5a308937986a"
-version = "0.3.0"
+version = "0.4.0"
 authors = ["Sébastien Celles"]
 
 [deps]

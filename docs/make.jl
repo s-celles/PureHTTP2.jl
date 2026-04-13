@@ -18,6 +18,7 @@ makedocs(;
         "Flow control" => "flow-control.md",
         "Interop parity" => "nghttp2-parity.md",
         "TLS & transport" => "tls.md",
+        "Server handler" => "handler.md",
         "Client" => "client.md",
         "API Reference" => "api.md",
     ],
