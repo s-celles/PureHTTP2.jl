@@ -5,6 +5,7 @@ and [RFC 7541](https://www.rfc-editor.org/rfc/rfc7541.html), covering
 both server and client roles, cross-tested against `libnghttp2` via
 [Nghttp2Wrapper.jl](https://github.com/s-celles/Nghttp2Wrapper.jl).
 
+[![Ask DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/s-celles/PureHTTP2.jl)
 [![CI](https://github.com/s-celles/PureHTTP2.jl/actions/workflows/CI.yml/badge.svg)](https://github.com/s-celles/PureHTTP2.jl/actions/workflows/CI.yml)
 [![Docs: stable](https://img.shields.io/badge/docs-stable-blue.svg)](https://s-celles.github.io/PureHTTP2.jl/stable/)
 [![Docs: dev](https://img.shields.io/badge/docs-dev-blue.svg)](https://s-celles.github.io/PureHTTP2.jl/dev/)
