@@ -28,11 +28,11 @@ jobs:
         os:
           - ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - uses: julia-actions/julia-buildpkg@v1
       - uses: julia-actions/julia-runtest@v1
 
@@ -43,11 +43,11 @@ jobs:
     # current stable release only and is NOT matrixed across the
     # main test-job's [1.10, 1] range.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'
-      - uses: julia-actions/cache@v2
+      - uses: julia-actions/cache@v3
       - name: Instantiate interop env
         # HTTP2 + Nghttp2Wrapper are resolved via the [sources] block in
         # test/interop/Project.toml (Julia ≥ 1.11), so a plain
@@ -55,3 +55,46 @@ jobs:
         run: julia --project=test/interop -e 'using Pkg; Pkg.instantiate()'
       - name: Run interop cross-tests
         run: julia --project=test/interop test/interop/runtests.jl
+
+  # Run the test suite of a package that depends on this one, against the code in
+  # this branch rather than the released version.
+  #
+  # Rationale: a flow-control defect here (process_data_frame! never consuming the
+  # receive window, so no WINDOW_UPDATE was ever emitted) surfaced downstream as
+  # "gRPC requests over ~64KB fail" and took a long investigation to trace back.
+  # A defect in a protocol library is far cheaper to diagnose from the consumer's
+  # failing test than from the consumer's symptom.
+  #
+  # Non-blocking on purpose: a downstream failure can equally mean the consumer is
+  # broken. Treat a red run as a signal to look, not as a gate on this repository.
+  downstream:
+    name: "Downstream: gRPCServer.jl"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: PureHTTP2.jl
+      - uses: actions/checkout@v7
+        with:
+          repository: s-celles/gRPCServer.jl
+          # develop, not the default branch: that is where gRPCServer's current
+          # work lands, so it is what this job needs to exercise.
+          ref: develop
+          path: gRPCServer.jl
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - name: Install grpcurl
+        run: |
+          GRPCURL_VERSION="1.8.9"
+          curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin grpcurl
+      - name: Test gRPCServer.jl against this PureHTTP2
+        run: |
+          julia --project=gRPCServer.jl -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path="PureHTTP2.jl"))
+            Pkg.instantiate()
+            Pkg.test()'

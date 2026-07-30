@@ -836,8 +836,11 @@ end
             key_file  = key_path,
         )
         @test server_cfg.alpn_protocols == ["h2"]
-        @test server_cfg.cert_file == cert_path
-        @test server_cfg.key_file == key_path
+        # Compare normalised paths: the helper stores a cleaned-up path, while
+        # cert_path still carries the ".." segment from joinpath above. Same file,
+        # different strings — a raw string comparison fails for no real reason.
+        @test normpath(server_cfg.cert_file) == normpath(cert_path)
+        @test normpath(server_cfg.key_file) == normpath(key_path)
     end
 
     # The ALPN_H2_PROTOCOLS constant is exported from PureHTTP2.
