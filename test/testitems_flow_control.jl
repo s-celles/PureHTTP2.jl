@@ -287,3 +287,75 @@ end
         @test PureHTTP2.get_recv_stream_window(controller, UInt32(1)) === nothing
     end
 end
+
+@testitem "Flow: receive accounting tracks the peer's real allowance" begin
+    using PureHTTP2
+
+    # The receive window must equal (total granted) - (total received) at all
+    # times. A peer that respects the allowance we advertised must never be
+    # reported as violating it.
+    #
+    # Regression guard: a wire capture showed the server emitting
+    # RST_STREAM(FLOW_CONTROL_ERROR) against perfectly legal traffic, which
+    # aborted every request larger than one window. The rejection came from
+    # consume_recv! deciding the peer had overrun a window that our own
+    # bookkeeping had drifted away from.
+
+    @testset "a well-behaved peer is never reported as violating" begin
+        controller = PureHTTP2.FlowController(; recv_initial_window_size = 65_535)
+        PureHTTP2.create_stream_window!(controller, UInt32(1))
+
+        granted = PureHTTP2.DEFAULT_INITIAL_WINDOW_SIZE   # what the peer may send now
+        received = 0
+        chunk = 16_384
+
+        # Drive far past a single window, the way a 200KB request does.
+        for _ in 1:60
+            n = min(chunk, granted - received)
+            n <= 0 && break
+            status = PureHTTP2.consume_recv!(controller, UInt32(1), n)
+            @test status === :ok           # legal traffic, never a violation
+            received += n
+
+            for f in PureHTTP2.generate_window_updates(controller)
+                if f.header.stream_id == 0
+                    granted += (UInt32(f.payload[1]) << 24) | (UInt32(f.payload[2]) << 16) |
+                               (UInt32(f.payload[3]) << 8) | UInt32(f.payload[4])
+                end
+            end
+        end
+
+        # The peer got room to send well beyond the first window.
+        @test received > 2 * PureHTTP2.DEFAULT_INITIAL_WINDOW_SIZE
+
+        # And our own view matches the ledger exactly.
+        @test PureHTTP2.available(controller.recv_connection_window) == granted - received
+    end
+
+    @testset "the window never drifts below the ledger across streams" begin
+        # Streams come and go; bytes consumed on a closed stream must not
+        # permanently erode the shared connection window.
+        controller = PureHTTP2.FlowController(; recv_initial_window_size = 65_535)
+        granted = PureHTTP2.DEFAULT_INITIAL_WINDOW_SIZE
+        received = 0
+
+        for id in UInt32.(1:2:11)
+            PureHTTP2.create_stream_window!(controller, id)
+            for _ in 1:3
+                n = min(16_384, granted - received)
+                n <= 0 && break
+                @test PureHTTP2.consume_recv!(controller, id, n) === :ok
+                received += n
+                for f in PureHTTP2.generate_window_updates(controller)
+                    if f.header.stream_id == 0
+                        granted += (UInt32(f.payload[1]) << 24) | (UInt32(f.payload[2]) << 16) |
+                                   (UInt32(f.payload[3]) << 8) | UInt32(f.payload[4])
+                    end
+                end
+            end
+            PureHTTP2.remove_stream_window!(controller, id)
+        end
+
+        @test PureHTTP2.available(controller.recv_connection_window) == granted - received
+    end
+end

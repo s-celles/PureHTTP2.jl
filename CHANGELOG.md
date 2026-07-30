@@ -46,6 +46,29 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   window from `SETTINGS_INITIAL_WINDOW_SIZE`; it was previously sized from
   that setting.
 
+### Known Issues
+
+- **Request bodies larger than one flow-control window still fail against
+  gRPCClient.jl.** Receive-side flow control now works — a wire capture
+  shows three WINDOW_UPDATEs per stream and 737 KB consumed where the
+  previous release stopped at 65535 bytes — but the transfer still does
+  not complete. The capture shows the server emitting
+  `RST_STREAM(FLOW_CONTROL_ERROR)` against traffic that appears legal,
+  which is the guard added in `consume_recv!`; the peer is then reset and
+  the request never reaches the handler.
+
+  The cause is not identified. Six hypotheses were measured and five
+  eliminated: a duplicated `process_frame` in the consumer, frames handled
+  in its wait loop, double crediting (an instrumentation artefact — the
+  ledger is correct), the 50% refresh threshold (lowering it to 0.001
+  changes nothing), and drift between `available` and the granted total
+  (the ledger invariant holds in the unit test added here). What remains
+  untested is divergence between the connection-level and stream-level
+  credits, which are emitted independently.
+
+  Only `PureHTTP2Backend` in gRPCServer.jl is affected; its default HTTP.jl
+  backend handles these requests correctly.
+
 ### Fixed
 
 - **Emitting a WINDOW_UPDATE now replenishes our own receive window.**
