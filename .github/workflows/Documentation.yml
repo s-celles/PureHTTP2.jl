@@ -23,7 +23,7 @@ jobs:
       pull-requests: write   # required by push_preview=true in docs/make.jl
       statuses: write        # reports the deploy status back to the commit
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'

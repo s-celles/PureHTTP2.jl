@@ -28,7 +28,7 @@ jobs:
         os:
           - ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: ${{ matrix.julia-version }}
@@ -43,7 +43,7 @@ jobs:
     # current stable release only and is NOT matrixed across the
     # main test-job's [1.10, 1] range.
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: julia-actions/setup-julia@v2
         with:
           version: '1'
@@ -73,10 +73,10 @@ jobs:
     continue-on-error: true
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           path: PureHTTP2.jl
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           repository: s-celles/gRPCServer.jl
           # develop, not the default branch: that is where gRPCServer's current
