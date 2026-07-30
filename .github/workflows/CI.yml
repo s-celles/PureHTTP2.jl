@@ -95,18 +95,27 @@ jobs:
       # A downstream job tests unreleased code by definition, so the bound will
       # not admit it — the first run of this job died on
       # "empty intersection between PureHTTP2@0.6.0 and project compatibility 0.5".
-      # That is a real signal for the consumer, but not what this job is here to
-      # check: it exercises the code, not the bound.
+      # That is a real signal for the consumer, but not what this job checks: it
+      # exercises the code, not the bound.
+      #
+      # Edited through Julia's TOML stdlib rather than a regex. A regex over
+      # Project.toml matched the [deps] entry too, where the value is a UUID, and
+      # rewrote it to "0" — the run then died on `Malformed UUID string: "0"`.
+      # A parser addresses [compat] unambiguously.
       - name: Relax the PureHTTP2 compat bound in the consumer
         run: |
-          python3 - <<'PY'
-          import re
-          p = "gRPCServer.jl/Project.toml"
-          s = open(p).read()
-          s2 = re.sub(r'^PureHTTP2\s*=\s*".*"$', 'PureHTTP2 = "0"', s, flags=re.M)
-          open(p, "w").write(s2)
-          print("compat PureHTTP2:", "relaxed" if s2 != s else "no entry found")
-          PY
+          julia -e '
+            using TOML
+            path = "gRPCServer.jl/Project.toml"
+            project = TOML.parsefile(path)
+            compat = get(project, "compat", nothing)
+            if compat !== nothing && haskey(compat, "PureHTTP2")
+                @info "relaxing compat" was=compat["PureHTTP2"]
+                compat["PureHTTP2"] = "0"
+                open(io -> TOML.print(io, project), path, "w")
+            else
+                @warn "no PureHTTP2 compat entry found; leaving Project.toml alone"
+            end'
       - name: Test gRPCServer.jl against this PureHTTP2
         run: |
           julia --project=gRPCServer.jl -e '
