@@ -89,6 +89,7 @@ export FlowControlWindow, FlowController
 export consume!, try_consume!, release!, available
 export should_send_update, get_update_increment, update_initial_size!
 export create_stream_window!, get_stream_window, remove_stream_window!
+export get_recv_stream_window, consume_recv!
 export consume_send!, max_sendable
 export apply_window_update!, apply_settings_initial_window_size!, generate_window_updates
 export DataSender, send_data_frames, DataReceiver

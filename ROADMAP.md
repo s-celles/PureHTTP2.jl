@@ -13,6 +13,51 @@ Each milestone respects the
 `TestItemRunner.jl`, SemVer + Keep a Changelog, warning-free Documenter
 builds, and RFC-grounded cross-tests against Nghttp2Wrapper.jl.
 
+## Open questions
+
+### Request bodies larger than one flow-control window
+
+**Status**: Open — receive-side flow control works, the transfer still does not
+complete.
+
+Against gRPCClient.jl, a unary request whose body exceeds the 65535-byte initial
+window never reaches the handler. A packet capture shows the server emitting
+`RST_STREAM(FLOW_CONTROL_ERROR)` against traffic that appears legal, after which
+the stream is reset.
+
+Seven hypotheses were measured, all eliminated:
+
+- [x] a duplicated `process_frame` in the consumer — measured with it removed
+- [x] frames handled in the consumer's wait loop — that loop is never entered
+- [x] double crediting — an instrumentation artefact; the ledger is correct
+- [x] the 50% refresh threshold — lowering it to 0.001 changes nothing
+- [x] drift between `available` and the granted total — the invariant holds
+      (unit test in `testitems_flow_control.jl`)
+- [x] the `consume_recv!` guard being the blocker — made non-fatal, no change
+- [x] that guard being the *source* of the reset — it never fires; the warning
+      logged zero times over a full 200 KB run
+
+**Next step**: find what else raises `FLOW_CONTROL_ERROR`. `consume_recv!` is
+exonerated, so the reset originates elsewhere in the connection layer. Start
+from a packet capture rather than server-side instrumentation — the latter
+produced two false conclusions in this investigation because it only covered
+one of several frame paths.
+
+Only `PureHTTP2Backend` in gRPCServer.jl is affected; its default HTTP.jl
+backend handles these requests correctly.
+
+### Interop entry point runs main-environment testitems
+
+**Status**: Open — low impact, order-dependent.
+
+`test/interop/runtests.jl` uses `@run_package_tests` with no filter, so it also
+runs the main-environment items. One of them,
+`Transport: ALPN helper stub (no extension)`, asserts that the Reseau extension
+is *not* loaded — true only if no earlier item loaded Reseau in the same
+process. It passes on CI and fails locally purely on execution order. The entry
+point should filter to `"Interop: "` items, mirroring what `test/runtests.jl`
+does in the other direction.
+
 ## Status snapshot (2026-04-13)
 
 | Milestone | Version         | Status         | Commit    | Tests (main / interop) |

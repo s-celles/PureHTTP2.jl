@@ -153,25 +153,54 @@ end
 """
     FlowController
 
-Manages flow control for an HTTP/2 connection.
+Manages flow control for an HTTP/2 connection, in both directions.
+
+The two directions are governed by different values and must not share windows
+(RFC 7540 §6.9.2):
+
+- **Send** — how much we may transmit. Stream windows are sized by the *peer's*
+  advertised `SETTINGS_INITIAL_WINDOW_SIZE` and credited by the WINDOW_UPDATE
+  frames it sends us.
+- **Receive** — how much we let the peer transmit. Stream windows are sized by
+  the value *we* advertise, and we replenish them by emitting WINDOW_UPDATE as we
+  consume received DATA.
+
+Conflating them means a peer advertising a large window (gRPCClient.jl advertises
+10 MB) also enlarges our receive windows, so the refresh threshold is never
+reached, no stream-level WINDOW_UPDATE is ever emitted, and the peer stalls once
+it has sent the initial window.
+
+Connection-level windows always start at `DEFAULT_INITIAL_WINDOW_SIZE` in both
+directions: §6.9.2 states that `SETTINGS_INITIAL_WINDOW_SIZE` applies to stream
+windows only and never to the connection window.
 
 # Fields
-- `connection_window::FlowControlWindow`: Connection-level window
-- `stream_windows::Dict{UInt32, FlowControlWindow}`: Per-stream windows
-- `initial_stream_window::Int`: Initial window size for new streams
-- `lock::ReentrantLock`: Thread-safe access to stream windows dict
+- `connection_window::FlowControlWindow`: Connection-level send window
+- `stream_windows::Dict{UInt32, FlowControlWindow}`: Per-stream send windows
+- `initial_stream_window::Int`: Initial size for new stream *send* windows
+- `recv_connection_window::FlowControlWindow`: Connection-level receive window
+- `recv_stream_windows::Dict{UInt32, FlowControlWindow}`: Per-stream receive windows
+- `initial_recv_stream_window::Int`: Initial size for new stream *receive* windows
+- `lock::ReentrantLock`: Thread-safe access to both stream window dicts
 """
 mutable struct FlowController
     connection_window::FlowControlWindow
     stream_windows::Dict{UInt32, FlowControlWindow}
     initial_stream_window::Int
+    recv_connection_window::FlowControlWindow
+    recv_stream_windows::Dict{UInt32, FlowControlWindow}
+    initial_recv_stream_window::Int
     lock::ReentrantLock
 
-    function FlowController(initial_window_size::Int=DEFAULT_INITIAL_WINDOW_SIZE)
+    function FlowController(initial_window_size::Int=DEFAULT_INITIAL_WINDOW_SIZE;
+                            recv_initial_window_size::Int=DEFAULT_INITIAL_WINDOW_SIZE)
         new(
-            FlowControlWindow(initial_window_size),
+            FlowControlWindow(DEFAULT_INITIAL_WINDOW_SIZE),
             Dict{UInt32, FlowControlWindow}(),
             initial_window_size,
+            FlowControlWindow(DEFAULT_INITIAL_WINDOW_SIZE),
+            Dict{UInt32, FlowControlWindow}(),
+            recv_initial_window_size,
             ReentrantLock()
         )
     end
@@ -184,6 +213,10 @@ Create a flow control window for a new stream.
 """
 function create_stream_window!(controller::FlowController, stream_id::UInt32)::FlowControlWindow
     lock(controller.lock) do
+        if !haskey(controller.recv_stream_windows, stream_id)
+            controller.recv_stream_windows[stream_id] =
+                FlowControlWindow(controller.initial_recv_stream_window)
+        end
         if haskey(controller.stream_windows, stream_id)
             return controller.stream_windows[stream_id]
         end
@@ -191,6 +224,42 @@ function create_stream_window!(controller::FlowController, stream_id::UInt32)::F
         controller.stream_windows[stream_id] = window
         return window
     end
+end
+
+"""
+    get_recv_stream_window(controller::FlowController, stream_id::UInt32) -> Union{FlowControlWindow, Nothing}
+
+Get the *receive* window for a stream — how much more the peer may send on it.
+See [`get_stream_window`](@ref) for the send-side counterpart.
+"""
+function get_recv_stream_window(controller::FlowController, stream_id::UInt32)::Union{FlowControlWindow, Nothing}
+    lock(controller.lock) do
+        return get(controller.recv_stream_windows, stream_id, nothing)
+    end
+end
+
+"""
+    consume_recv!(controller::FlowController, stream_id::UInt32, size::Int) -> Symbol
+
+Account `size` bytes of received DATA against the connection and stream receive
+windows.
+
+Returns `:ok`, or `:connection_exceeded` / `:stream_exceeded` when the peer sent
+more than the corresponding window allowed — a flow-control violation the caller
+should surface as `FLOW_CONTROL_ERROR` (RFC 7540 §6.9).
+
+The consumed bytes become `pending_updates`, which is what
+[`generate_window_updates`](@ref) turns into WINDOW_UPDATE frames.
+"""
+function consume_recv!(controller::FlowController, stream_id::UInt32, size::Int)::Symbol
+    if !consume!(controller.recv_connection_window, size)
+        return :connection_exceeded
+    end
+    window = get_recv_stream_window(controller, stream_id)
+    if window !== nothing && !consume!(window, size)
+        return :stream_exceeded
+    end
+    return :ok
 end
 
 """
@@ -212,6 +281,7 @@ Remove the flow control window for a closed stream.
 function remove_stream_window!(controller::FlowController, stream_id::UInt32)
     lock(controller.lock) do
         delete!(controller.stream_windows, stream_id)
+        delete!(controller.recv_stream_windows, stream_id)
     end
 end
 
@@ -326,20 +396,29 @@ function generate_window_updates(controller::FlowController;
                                   threshold_ratio::Float64=0.5)::Vector{Frame}
     frames = Frame[]
 
-    # Connection-level update
-    if should_send_update(controller.connection_window; threshold_ratio=threshold_ratio)
-        increment = get_update_increment(controller.connection_window)
+    # Receive side only: a WINDOW_UPDATE tells the *peer* it may send more, so it
+    # is generated from what we have consumed of our own receive windows. Reading
+    # the send windows here would report our own remaining allowance instead.
+    if should_send_update(controller.recv_connection_window; threshold_ratio=threshold_ratio)
+        increment = get_update_increment(controller.recv_connection_window)
         if increment > 0
+            # Emitting the frame grants the peer that many bytes again, so our own
+            # accounting of what it may still send has to grow by the same amount.
+            # `get_update_increment` only clears `pending_updates`; without this the
+            # receive window drains to zero and legitimate DATA is rejected as a
+            # flow-control violation.
+            release!(controller.recv_connection_window, increment)
             push!(frames, window_update_frame(0, increment))
         end
     end
 
     # Stream-level updates
     lock(controller.lock) do
-        for (stream_id, window) in controller.stream_windows
+        for (stream_id, window) in controller.recv_stream_windows
             if should_send_update(window; threshold_ratio=threshold_ratio)
                 increment = get_update_increment(window)
                 if increment > 0
+                    release!(window, increment)   # see the connection-level note above
                     push!(frames, window_update_frame(stream_id, increment))
                 end
             end

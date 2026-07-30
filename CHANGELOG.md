@@ -30,6 +30,70 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   a consumer's failing test points at the cause far more directly than a
   consumer's symptom.
 
+### Changed
+
+- **`FlowController` now keeps send and receive windows apart.** The two
+  directions are governed by different values (RFC 7540 §6.9.2): stream
+  *send* windows follow the peer's advertised
+  `SETTINGS_INITIAL_WINDOW_SIZE`, stream *receive* windows follow the value
+  we advertise ourselves. Sharing them meant a peer advertising a large
+  window (gRPCClient.jl advertises 10 MB) also enlarged our receive
+  windows, so the 50% refresh threshold was never reached and no
+  stream-level WINDOW_UPDATE was ever emitted.
+
+  New fields `recv_connection_window`, `recv_stream_windows` and
+  `initial_recv_stream_window`; the existing fields keep their names and
+  are now unambiguously the send side. `FlowController` takes a
+  `recv_initial_window_size` keyword. New exports `get_recv_stream_window`
+  and `consume_recv!`. `generate_window_updates` now reads the receive
+  side, which is the only direction for which crediting the peer means
+  anything.
+- **Connection-level windows always start at
+  `DEFAULT_INITIAL_WINDOW_SIZE`.** RFC 7540 §6.9.2 excludes the connection
+  window from `SETTINGS_INITIAL_WINDOW_SIZE`; it was previously sized from
+  that setting.
+
+### Known Issues
+
+- **Request bodies larger than one flow-control window still fail against
+  gRPCClient.jl.** Receive-side flow control now works — a wire capture
+  shows three WINDOW_UPDATEs per stream and 737 KB consumed where the
+  previous release stopped at 65535 bytes — but the transfer still does
+  not complete. The capture shows the server emitting
+  `RST_STREAM(FLOW_CONTROL_ERROR)` against traffic that appears legal,
+  which is the guard added in `consume_recv!`; the peer is then reset and
+  the request never reaches the handler.
+
+  The cause is not identified. Six hypotheses were measured and five
+  eliminated: a duplicated `process_frame` in the consumer, frames handled
+  in its wait loop, double crediting (an instrumentation artefact — the
+  ledger is correct), the 50% refresh threshold (lowering it to 0.001
+  changes nothing), and drift between `available` and the granted total
+  (the ledger invariant holds in the unit test added here). What remains
+  untested is divergence between the connection-level and stream-level
+  credits, which are emitted independently.
+
+  Only `PureHTTP2Backend` in gRPCServer.jl is affected; its default HTTP.jl
+  backend handles these requests correctly.
+
+### Fixed
+
+- **Emitting a WINDOW_UPDATE now replenishes our own receive window.**
+  `get_update_increment` clears `pending_updates` but does not restore
+  `available`, so the receive window drained to zero and legitimate DATA
+  was rejected as a flow-control violation once the peer had sent the
+  initial window.
+- **Receiving DATA now replenishes the peer's send window.**
+  `process_data_frame!` delivered the payload to the stream without
+  touching `conn.flow_controller`, so `pending_updates` stayed at zero,
+  `generate_window_updates` produced nothing, and a peer stalled for good
+  once it had sent the initial 65535 bytes — any request body larger than
+  the initial window hung. Both the connection window and the stream
+  window are now consumed by the frame's flow-controlled length, which per
+  RFC 7540 §6.9.1 is the payload length *including* padding and the
+  pad-length octet. A peer that overruns either window is rejected with a
+  `FLOW_CONTROL_ERROR` connection error, per §6.9.
+
 ## [0.5.0] — 2026-04-13
 
 **Write-side streaming.** Activate the v0.4.0 forward-compat

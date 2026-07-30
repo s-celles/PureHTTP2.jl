@@ -199,7 +199,11 @@ mutable struct HTTP2Connection
             Dict{UInt32, HTTP2Stream}(),
             HPACKEncoder(local_settings.header_table_size),
             HPACKDecoder(local_settings.header_table_size),
-            FlowController(local_settings.initial_window_size),
+            # Send windows follow the peer's advertised SETTINGS_INITIAL_WINDOW_SIZE
+            # (still at its default here; updated when its SETTINGS arrives);
+            # receive windows follow the value we advertise. RFC 7540 §6.9.2.
+            FlowController(ConnectionSettings().initial_window_size;
+                           recv_initial_window_size=local_settings.initial_window_size),
             2,  # Server-initiated streams are even
             0,
             false,
@@ -579,6 +583,24 @@ function process_data_frame!(conn::HTTP2Connection, frame::Frame)::Vector{Frame}
             throw(ConnectionError(ErrorCode.PROTOCOL_ERROR, "Padding too large"))
         end
         payload = payload[2:(end - pad_length)]
+    end
+
+    # Receive-side flow control (RFC 7540 §6.9). The flow-controlled length is the
+    # whole DATA payload *including* padding and the pad-length octet — that is
+    # `frame.header.length`, not the payload left after stripping padding above.
+    #
+    # Consuming here is what makes `generate_window_updates` emit anything: it is
+    # what turns received bytes into `pending_updates`. Without it a receiver never
+    # replenishes the peer's window, so a sender stalls for good once it has sent
+    # the initial 65535 bytes — any request larger than that hangs.
+    flow_controlled_length = Int(frame.header.length)
+    status = consume_recv!(conn.flow_controller, stream_id, flow_controlled_length)
+    if status === :connection_exceeded
+        throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
+            "DATA of $flow_controlled_length bytes exceeds the connection receive window"))
+    elseif status === :stream_exceeded
+        throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
+            "DATA of $flow_controlled_length bytes exceeds the receive window of stream $stream_id"))
     end
 
     end_stream = has_flag(frame.header, FrameFlags.END_STREAM)
