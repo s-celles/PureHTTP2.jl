@@ -91,6 +91,22 @@ jobs:
         run: |
           GRPCURL_VERSION="1.8.9"
           curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin grpcurl
+      # Relax the consumer's compat bound on this package before developing it.
+      # A downstream job tests unreleased code by definition, so the bound will
+      # not admit it — the first run of this job died on
+      # "empty intersection between PureHTTP2@0.6.0 and project compatibility 0.5".
+      # That is a real signal for the consumer, but not what this job is here to
+      # check: it exercises the code, not the bound.
+      - name: Relax the PureHTTP2 compat bound in the consumer
+        run: |
+          python3 - <<'PY'
+          import re
+          p = "gRPCServer.jl/Project.toml"
+          s = open(p).read()
+          s2 = re.sub(r'^PureHTTP2\s*=\s*".*"$', 'PureHTTP2 = "0"', s, flags=re.M)
+          open(p, "w").write(s2)
+          print("compat PureHTTP2:", "relaxed" if s2 != s else "no entry found")
+          PY
       - name: Test gRPCServer.jl against this PureHTTP2
         run: |
           julia --project=gRPCServer.jl -e '
