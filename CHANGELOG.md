@@ -7,6 +7,34 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Fixed
+
+- **Receiving DATA now replenishes the peer's send window.**
+  `process_data_frame!` delivered the payload to the stream without
+  touching `conn.flow_controller`, so `pending_updates` stayed at zero,
+  `generate_window_updates` produced nothing, and a peer stalled for good
+  once it had sent the initial 65535 bytes — any request body larger than
+  the initial window hung. Both the connection window and the stream
+  window are now consumed by the frame's flow-controlled length, which per
+  RFC 7540 §6.9.1 is the payload length *including* padding and the
+  pad-length octet. A peer that overruns either window is rejected with a
+  `FLOW_CONTROL_ERROR` connection error, per §6.9.
+
+### Known Issues
+
+- **Receive windows are still sized by the peer's
+  `SETTINGS_INITIAL_WINDOW_SIZE`.** `process_settings_frame!` applies
+  `conn.remote_settings.initial_window_size` to the flow controller, but
+  RFC 7540 §6.9.2 makes that setting govern what *we may send* on a
+  stream; our own receive window is governed by the value *we* advertise.
+  A peer advertising a large window (gRPCClient.jl advertises 10 MB) makes
+  our stream receive windows 10 MB, so the 50% refresh threshold is never
+  reached and no stream-level WINDOW_UPDATE is emitted — the connection
+  window is refreshed correctly, the stream window is not. Fixing this
+  properly means separating send and receive windows in `FlowController`,
+  which changes its public surface, so it is deliberately not bundled with
+  the fix above.
+
 ## [0.5.0] — 2026-04-13
 
 **Write-side streaming.** Activate the v0.4.0 forward-compat

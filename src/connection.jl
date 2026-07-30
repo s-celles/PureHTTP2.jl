@@ -581,6 +581,25 @@ function process_data_frame!(conn::HTTP2Connection, frame::Frame)::Vector{Frame}
         payload = payload[2:(end - pad_length)]
     end
 
+    # Receive-side flow control (RFC 7540 §6.9). The flow-controlled length is the
+    # whole DATA payload *including* padding and the pad-length octet — that is
+    # `frame.header.length`, not the payload left after stripping padding above.
+    #
+    # Consuming here is what makes `generate_window_updates` emit anything: it is
+    # what turns received bytes into `pending_updates`. Without it a receiver never
+    # replenishes the peer's window, so a sender stalls for good once it has sent
+    # the initial 65535 bytes — any request larger than that hangs.
+    flow_controlled_length = Int(frame.header.length)
+    if !consume!(conn.flow_controller.connection_window, flow_controlled_length)
+        throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
+            "DATA of $flow_controlled_length bytes exceeds the connection receive window"))
+    end
+    stream_window = get_stream_window(conn.flow_controller, stream_id)
+    if stream_window !== nothing && !consume!(stream_window, flow_controlled_length)
+        throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
+            "DATA of $flow_controlled_length bytes exceeds the receive window of stream $stream_id"))
+    end
+
     end_stream = has_flag(frame.header, FrameFlags.END_STREAM)
     receive_data!(stream, payload, end_stream)
 

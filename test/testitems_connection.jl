@@ -235,3 +235,65 @@ end
         @test conn.local_settings.max_concurrent_streams == 100
     end
 end
+
+@testitem "Connection: receiving DATA replenishes the peer's send window" begin
+    using PureHTTP2
+
+    # RFC 7540 §6.9: a receiver that never sends WINDOW_UPDATE stalls the sender
+    # once the initial 65535-byte window is exhausted. §6.9.1 defines the
+    # flow-controlled length of a DATA frame as its payload length *including*
+    # padding, which is exactly `frame.header.length`.
+    #
+    # Regression guard: process_data_frame! used to deliver the payload to the
+    # stream without touching conn.flow_controller, so pending_updates stayed at
+    # zero, generate_window_updates produced nothing, and any request larger than
+    # the initial window hung.
+
+    function open_stream!(conn, id::UInt32)
+        stream = PureHTTP2.create_stream(conn, id)
+        stream.state = PureHTTP2.StreamState.OPEN
+        return stream
+    end
+
+    @testset "receive window is consumed on the connection and the stream" begin
+        conn = PureHTTP2.HTTP2Connection()
+        open_stream!(conn, UInt32(1))
+        before_conn = PureHTTP2.available(conn.flow_controller.connection_window)
+        before_stream = PureHTTP2.available(
+            PureHTTP2.get_stream_window(conn.flow_controller, UInt32(1)))
+
+        payload = fill(0x61, 1000)
+        PureHTTP2.process_frame(conn, PureHTTP2.data_frame(1, payload))
+
+        @test PureHTTP2.available(conn.flow_controller.connection_window) ==
+              before_conn - 1000
+        @test PureHTTP2.available(
+            PureHTTP2.get_stream_window(conn.flow_controller, UInt32(1))) ==
+              before_stream - 1000
+    end
+
+    @testset "WINDOW_UPDATE frames are emitted past the threshold" begin
+        conn = PureHTTP2.HTTP2Connection()
+        open_stream!(conn, UInt32(1))
+
+        # Below the 50% threshold: nothing to send yet.
+        frames = PureHTTP2.process_frame(conn, PureHTTP2.data_frame(1, fill(0x61, 1000)))
+        @test isempty(filter(f -> f.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE,
+                             frames))
+
+        # Past it: one update for the connection, one for the stream.
+        frames = PureHTTP2.process_frame(conn, PureHTTP2.data_frame(1, fill(0x61, 40_000)))
+        updates = filter(f -> f.header.frame_type == PureHTTP2.FrameType.WINDOW_UPDATE,
+                         frames)
+        @test length(updates) == 2
+        @test sort([Int(f.header.stream_id) for f in updates]) == [0, 1]
+    end
+
+    @testset "a sender exceeding the window is a FLOW_CONTROL_ERROR" begin
+        conn = PureHTTP2.HTTP2Connection()
+        open_stream!(conn, UInt32(1))
+        oversized = fill(0x61, PureHTTP2.DEFAULT_INITIAL_WINDOW_SIZE + 1)
+        @test_throws PureHTTP2.ConnectionError PureHTTP2.process_frame(
+            conn, PureHTTP2.data_frame(1, oversized))
+    end
+end
