@@ -199,7 +199,11 @@ mutable struct HTTP2Connection
             Dict{UInt32, HTTP2Stream}(),
             HPACKEncoder(local_settings.header_table_size),
             HPACKDecoder(local_settings.header_table_size),
-            FlowController(local_settings.initial_window_size),
+            # Send windows follow the peer's advertised SETTINGS_INITIAL_WINDOW_SIZE
+            # (still at its default here; updated when its SETTINGS arrives);
+            # receive windows follow the value we advertise. RFC 7540 §6.9.2.
+            FlowController(ConnectionSettings().initial_window_size;
+                           recv_initial_window_size=local_settings.initial_window_size),
             2,  # Server-initiated streams are even
             0,
             false,
@@ -590,12 +594,11 @@ function process_data_frame!(conn::HTTP2Connection, frame::Frame)::Vector{Frame}
     # replenishes the peer's window, so a sender stalls for good once it has sent
     # the initial 65535 bytes — any request larger than that hangs.
     flow_controlled_length = Int(frame.header.length)
-    if !consume!(conn.flow_controller.connection_window, flow_controlled_length)
+    status = consume_recv!(conn.flow_controller, stream_id, flow_controlled_length)
+    if status === :connection_exceeded
         throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
             "DATA of $flow_controlled_length bytes exceeds the connection receive window"))
-    end
-    stream_window = get_stream_window(conn.flow_controller, stream_id)
-    if stream_window !== nothing && !consume!(stream_window, flow_controlled_length)
+    elseif status === :stream_exceeded
         throw(ConnectionError(ErrorCode.FLOW_CONTROL_ERROR,
             "DATA of $flow_controlled_length bytes exceeds the receive window of stream $stream_id"))
     end

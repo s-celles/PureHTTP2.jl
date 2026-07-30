@@ -258,18 +258,23 @@ end
     @testset "receive window is consumed on the connection and the stream" begin
         conn = PureHTTP2.HTTP2Connection()
         open_stream!(conn, UInt32(1))
-        before_conn = PureHTTP2.available(conn.flow_controller.connection_window)
+        before_conn = PureHTTP2.available(conn.flow_controller.recv_connection_window)
         before_stream = PureHTTP2.available(
+            PureHTTP2.get_recv_stream_window(conn.flow_controller, UInt32(1)))
+        before_send = PureHTTP2.available(
             PureHTTP2.get_stream_window(conn.flow_controller, UInt32(1)))
 
         payload = fill(0x61, 1000)
         PureHTTP2.process_frame(conn, PureHTTP2.data_frame(1, payload))
 
-        @test PureHTTP2.available(conn.flow_controller.connection_window) ==
+        @test PureHTTP2.available(conn.flow_controller.recv_connection_window) ==
               before_conn - 1000
         @test PureHTTP2.available(
-            PureHTTP2.get_stream_window(conn.flow_controller, UInt32(1))) ==
+            PureHTTP2.get_recv_stream_window(conn.flow_controller, UInt32(1))) ==
               before_stream - 1000
+        # Receiving must not touch what we are allowed to send.
+        @test PureHTTP2.available(
+            PureHTTP2.get_stream_window(conn.flow_controller, UInt32(1))) == before_send
     end
 
     @testset "WINDOW_UPDATE frames are emitted past the threshold" begin

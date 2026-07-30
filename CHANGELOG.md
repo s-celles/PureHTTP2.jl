@@ -7,8 +7,36 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Changed
+
+- **`FlowController` now keeps send and receive windows apart.** The two
+  directions are governed by different values (RFC 7540 §6.9.2): stream
+  *send* windows follow the peer's advertised
+  `SETTINGS_INITIAL_WINDOW_SIZE`, stream *receive* windows follow the value
+  we advertise ourselves. Sharing them meant a peer advertising a large
+  window (gRPCClient.jl advertises 10 MB) also enlarged our receive
+  windows, so the 50% refresh threshold was never reached and no
+  stream-level WINDOW_UPDATE was ever emitted.
+
+  New fields `recv_connection_window`, `recv_stream_windows` and
+  `initial_recv_stream_window`; the existing fields keep their names and
+  are now unambiguously the send side. `FlowController` takes a
+  `recv_initial_window_size` keyword. New exports `get_recv_stream_window`
+  and `consume_recv!`. `generate_window_updates` now reads the receive
+  side, which is the only direction for which crediting the peer means
+  anything.
+- **Connection-level windows always start at
+  `DEFAULT_INITIAL_WINDOW_SIZE`.** RFC 7540 §6.9.2 excludes the connection
+  window from `SETTINGS_INITIAL_WINDOW_SIZE`; it was previously sized from
+  that setting.
+
 ### Fixed
 
+- **Emitting a WINDOW_UPDATE now replenishes our own receive window.**
+  `get_update_increment` clears `pending_updates` but does not restore
+  `available`, so the receive window drained to zero and legitimate DATA
+  was rejected as a flow-control violation once the peer had sent the
+  initial window.
 - **Receiving DATA now replenishes the peer's send window.**
   `process_data_frame!` delivered the payload to the stream without
   touching `conn.flow_controller`, so `pending_updates` stayed at zero,
@@ -19,21 +47,6 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
   RFC 7540 §6.9.1 is the payload length *including* padding and the
   pad-length octet. A peer that overruns either window is rejected with a
   `FLOW_CONTROL_ERROR` connection error, per §6.9.
-
-### Known Issues
-
-- **Receive windows are still sized by the peer's
-  `SETTINGS_INITIAL_WINDOW_SIZE`.** `process_settings_frame!` applies
-  `conn.remote_settings.initial_window_size` to the flow controller, but
-  RFC 7540 §6.9.2 makes that setting govern what *we may send* on a
-  stream; our own receive window is governed by the value *we* advertise.
-  A peer advertising a large window (gRPCClient.jl advertises 10 MB) makes
-  our stream receive windows 10 MB, so the 50% refresh threshold is never
-  reached and no stream-level WINDOW_UPDATE is emitted — the connection
-  window is refreshed correctly, the stream window is not. Fixing this
-  properly means separating send and receive windows in `FlowController`,
-  which changes its public surface, so it is deliberately not bundled with
-  the fix above.
 
 ## [0.5.0] — 2026-04-13
 

@@ -57,7 +57,9 @@ PureHTTP2.FlowController
 ```@docs
 PureHTTP2.create_stream_window!
 PureHTTP2.get_stream_window
+PureHTTP2.get_recv_stream_window
 PureHTTP2.remove_stream_window!
+PureHTTP2.consume_recv!
 PureHTTP2.consume_send!
 PureHTTP2.max_sendable
 PureHTTP2.apply_window_update!
