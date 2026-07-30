@@ -17,6 +17,13 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 - **Dependabot for GitHub Actions.** The pinned actions had drifted far
   enough behind that GitHub's Node.js 20 deprecation started warning on
   every job. Monthly updates keep that from recurring.
+- **CompatHelper workflow**, covering both the top-level project and the
+  `test/interop` environment via `subdirs`. Initially skipped on the grounds
+  that this package has no runtime dependencies — too quick a read: the main
+  project still declares compat for TestItemRunner, and test/interop is a full
+  environment with Nghttp2Wrapper, OpenSSL, Reseau, JSON and TestItemRunner.
+  Reseau moves fast enough that the interop environment had drifted to 1.0.1
+  while 1.3.4 was current.
 - **Downstream CI job running gRPCServer.jl's suite against this branch.**
   Non-blocking. A flow-control defect here surfaced downstream as "gRPC
   requests over ~64KB fail" and took a long investigation to trace back;
