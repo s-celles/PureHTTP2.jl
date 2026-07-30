@@ -55,3 +55,43 @@ jobs:
         run: julia --project=test/interop -e 'using Pkg; Pkg.instantiate()'
       - name: Run interop cross-tests
         run: julia --project=test/interop test/interop/runtests.jl
+
+  # Run the test suite of a package that depends on this one, against the code in
+  # this branch rather than the released version.
+  #
+  # Rationale: a flow-control defect here (process_data_frame! never consuming the
+  # receive window, so no WINDOW_UPDATE was ever emitted) surfaced downstream as
+  # "gRPC requests over ~64KB fail" and took a long investigation to trace back.
+  # A defect in a protocol library is far cheaper to diagnose from the consumer's
+  # failing test than from the consumer's symptom.
+  #
+  # Non-blocking on purpose: a downstream failure can equally mean the consumer is
+  # broken. Treat a red run as a signal to look, not as a gate on this repository.
+  downstream:
+    name: "Downstream: gRPCServer.jl"
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: PureHTTP2.jl
+      - uses: actions/checkout@v5
+        with:
+          repository: s-celles/gRPCServer.jl
+          path: gRPCServer.jl
+      - uses: julia-actions/setup-julia@v3
+        with:
+          version: '1'
+      - uses: julia-actions/cache@v3
+      - name: Install grpcurl
+        run: |
+          GRPCURL_VERSION="1.8.9"
+          curl -sSL "https://github.com/fullstorydev/grpcurl/releases/download/v${GRPCURL_VERSION}/grpcurl_${GRPCURL_VERSION}_linux_x86_64.tar.gz" | tar -xz -C /usr/local/bin grpcurl
+      - name: Test gRPCServer.jl against this PureHTTP2
+        run: |
+          julia --project=gRPCServer.jl -e '
+            using Pkg
+            Pkg.develop(PackageSpec(path="PureHTTP2.jl"))
+            Pkg.instantiate()
+            Pkg.test("gRPCServer")'

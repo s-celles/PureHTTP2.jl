@@ -7,6 +7,22 @@ and PureHTTP2.jl adheres to [Semantic Versioning 2.0.0](https://semver.org/spec/
 
 ## [Unreleased]
 
+### Added
+
+- **TagBot workflow.** Versions were being registered in the General
+  registry without the repository ever getting a tag: 0.5.0 was
+  registered while the newest tag was still v0.3.0. TagBot creates the
+  tag and release once a version is registered, and can backfill the
+  missing one via its `workflow_dispatch` lookback.
+- **Dependabot for GitHub Actions.** The pinned actions had drifted far
+  enough behind that GitHub's Node.js 20 deprecation started warning on
+  every job. Monthly updates keep that from recurring.
+- **Downstream CI job running gRPCServer.jl's suite against this branch.**
+  Non-blocking. A flow-control defect here surfaced downstream as "gRPC
+  requests over ~64KB fail" and took a long investigation to trace back;
+  a consumer's failing test points at the cause far more directly than a
+  consumer's symptom.
+
 ## [0.5.0] — 2026-04-13
 
 **Write-side streaming.** Activate the v0.4.0 forward-compat
