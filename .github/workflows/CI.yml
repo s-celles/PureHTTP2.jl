@@ -79,6 +79,9 @@ jobs:
       - uses: actions/checkout@v5
         with:
           repository: s-celles/gRPCServer.jl
+          # develop, not the default branch: that is where gRPCServer's current
+          # work lands, so it is what this job needs to exercise.
+          ref: develop
           path: gRPCServer.jl
       - uses: julia-actions/setup-julia@v3
         with:
@@ -94,4 +97,4 @@ jobs:
             using Pkg
             Pkg.develop(PackageSpec(path="PureHTTP2.jl"))
             Pkg.instantiate()
-            Pkg.test("gRPCServer")'
+            Pkg.test()'
