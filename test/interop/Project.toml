@@ -13,6 +13,7 @@ path = "../.."
 [compat]
 Nghttp2Wrapper = "0.2, 0.3"
 JSON = "1"
+PureHTTP2 = "0.5"
 OpenSSL = "1"
 Reseau = "1"
 TestItemRunner = "1"
